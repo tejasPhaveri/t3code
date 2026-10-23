@@ -96,6 +96,8 @@ export const GitGraphWorktree = Schema.Struct({
   head: Schema.NullOr(GitGraphHash),
   /** The checkout the request came from. */
   current: Schema.Boolean,
+  /** A merge stopped on conflicts and waits for a commit or an abort. */
+  merging: Schema.Boolean,
   staged: Schema.Array(GitGraphWorktreeFile),
   unstaged: Schema.Array(GitGraphWorktreeFile),
 });
@@ -120,8 +122,9 @@ export const GitGraphAction = Schema.Union([
   Schema.TaggedStruct("Unstage", { paths: GitGraphPaths }),
   /** Drops unstaged changes; untracked files are deleted. */
   Schema.TaggedStruct("Discard", { paths: GitGraphPaths }),
+  /** Without a message, concludes a merge with git's prepared merge message. */
   Schema.TaggedStruct("Commit", {
-    message: TrimmedNonEmptyString.check(Schema.isMaxLength(50_000)),
+    message: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(50_000))),
   }),
   Schema.TaggedStruct("Fetch", {}),
   /**
@@ -141,6 +144,9 @@ export const GitGraphAction = Schema.Union([
     message: Schema.optional(Schema.String.check(Schema.isMaxLength(1_000))),
     includeUntracked: Schema.Boolean,
   }),
+  /** Merges a full branch name or a commit hash into the checked-out branch with a merge commit. */
+  Schema.TaggedStruct("Merge", { ref: TrimmedNonEmptyString.check(Schema.isMaxLength(512)) }),
+  Schema.TaggedStruct("MergeAbort", {}),
   Schema.TaggedStruct("StashApply", { selector: Schema.String }),
   Schema.TaggedStruct("StashPop", { selector: Schema.String }),
   Schema.TaggedStruct("StashDrop", { selector: Schema.String }),

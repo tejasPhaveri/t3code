@@ -173,6 +173,7 @@ function BranchChip(props: {
 
 type RowMenuAction =
   | "checkout"
+  | "merge"
   | "create-branch"
   | "copy-hash"
   | "stash"
@@ -180,7 +181,7 @@ type RowMenuAction =
   | "stash-pop"
   | "stash-drop";
 
-type BranchMenuAction = "checkout" | "create-branch" | "copy-name";
+type BranchMenuAction = "checkout" | "merge" | "create-branch" | "copy-name";
 
 export function GitGraphPanel(props: {
   readonly environmentId: EnvironmentId;
@@ -276,6 +277,23 @@ export function GitGraphPanel(props: {
         ),
     });
 
+  const currentBranch = log.data?.head?.branch ?? null;
+  const mergeEntry = (disabled: boolean) => ({
+    id: "merge" as const,
+    label: currentBranch ? `Merge into ${currentBranch}…` : "Merge into current branch…",
+    disabled: disabled || currentBranch === null,
+  });
+  const mergeIntoCurrent = async (ref: string, label: string) => {
+    if (currentBranch === null) return;
+    const confirmed = await confirmGitGraphAction(
+      `Merge ${label} into ${currentBranch}?\nCreates a merge commit on ${currentBranch}.`,
+      "default",
+    );
+    if (confirmed) {
+      void runAction({ _tag: "Merge", ref }, { success: `Merged ${label} into ${currentBranch}` });
+    }
+  };
+
   const showMenu = async <T extends string>(
     event: MouseEvent,
     entries: readonly {
@@ -346,6 +364,7 @@ export function GitGraphPanel(props: {
     const { hash } = item.commit;
     const choice = await showMenu<RowMenuAction>(event, [
       { id: "checkout", label: "Check out this commit (detached)" },
+      mergeEntry(item.commit.hash === log.data?.head?.hash),
       { id: "create-branch", label: "Create branch here…" },
       { id: "copy-hash", label: "Copy commit hash", separatorBefore: true },
     ]);
@@ -354,6 +373,8 @@ export function GitGraphPanel(props: {
         { _tag: "Checkout", ref: hash },
         { success: `Checked out ${shortHash(hash)}` },
       );
+    } else if (choice === "merge") {
+      void mergeIntoCurrent(hash, `commit ${shortHash(hash)}`);
     } else if (choice === "create-branch") {
       promptCreateBranch(hash, `commit ${shortHash(hash)}`);
     } else if (choice === "copy-hash") {
@@ -365,6 +386,7 @@ export function GitGraphPanel(props: {
     if (branch.kind === "remote") {
       const choice = await showMenu<BranchMenuAction>(event, [
         { id: "checkout", label: "Check out as local branch…" },
+        mergeEntry(false),
         { id: "create-branch", label: "Create branch from here…" },
         { id: "copy-name", label: "Copy branch name", separatorBefore: true },
       ]);
@@ -381,6 +403,8 @@ export function GitGraphPanel(props: {
               { success: `Checked out ${localName}` },
             ),
         });
+      } else if (choice === "merge") {
+        void mergeIntoCurrent(branch.fullName, branch.name);
       } else if (choice === "create-branch") {
         promptCreateBranch(branch.fullName, branch.name);
       } else if (choice === "copy-name") {
@@ -390,6 +414,7 @@ export function GitGraphPanel(props: {
     }
     const choice = await showMenu<BranchMenuAction>(event, [
       { id: "checkout", label: "Check out", disabled: branch.checkedOut },
+      mergeEntry(branch.checkedOut),
       { id: "create-branch", label: "Create branch from here…" },
       { id: "copy-name", label: "Copy branch name", separatorBefore: true },
     ]);
@@ -398,6 +423,8 @@ export function GitGraphPanel(props: {
         { _tag: "Checkout", ref: branch.fullName },
         { success: `Checked out ${branch.name}` },
       );
+    } else if (choice === "merge") {
+      void mergeIntoCurrent(branch.fullName, branch.name);
     } else if (choice === "create-branch") {
       promptCreateBranch(branch.fullName, branch.name);
     } else if (choice === "copy-name") {

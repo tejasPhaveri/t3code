@@ -536,6 +536,8 @@ type SidebarThreadRowProps = {
   // Card rows under a project group header skip the badge and name the
   // header already shows; the tooltip and accessible label keep the project.
   hideProjectIdentity?: boolean;
+  /** Background wash marking which project group the row belongs to. */
+  projectTintClassName?: string | null;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
   timestampFormat: TimestampFormat;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
@@ -896,8 +898,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         : hasUnsentDraft
           ? cn(draftSurfaceClassName, "text-sidebar-foreground")
           : shouldRecede
-            ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-            : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
+            ? cn(
+                props.projectTintClassName,
+                "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+              )
+            : cn(
+                props.projectTintClassName ?? "bg-transparent",
+                "text-sidebar-foreground hover:bg-sidebar-row-hover",
+              ),
     shouldRecede &&
       status === "working" &&
       "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",

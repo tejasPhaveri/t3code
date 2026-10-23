@@ -1,4 +1,4 @@
-import type { EnvironmentId, GitGraphAction } from "@t3tools/contracts";
+import type { ConfirmDialogVariant, EnvironmentId, GitGraphAction } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 
 import { useStableCallback } from "~/hooks/useStableCallback";
@@ -17,6 +17,8 @@ const FAILURE_TITLES: Record<GitGraphAction["_tag"], string> = {
   Fetch: "Fetch failed",
   Checkout: "Checkout failed",
   CreateBranch: "Could not create the branch",
+  Merge: "Merge stopped",
+  MergeAbort: "Could not abort the merge",
   Stash: "Could not stash",
   StashApply: "Could not apply the stash",
   StashPop: "Could not pop the stash",
@@ -33,11 +35,14 @@ function failureDetail(cause: Cause.Cause<unknown>): string {
   return formatEnvironmentQueryError(cause);
 }
 
-export async function confirmGitGraphAction(message: string): Promise<boolean> {
+export async function confirmGitGraphAction(
+  message: string,
+  variant: ConfirmDialogVariant = "destructive",
+): Promise<boolean> {
   const api = readLocalApi();
   if (!api) return window.confirm(message);
   try {
-    return await api.dialogs.confirm(message, { variant: "destructive" });
+    return await api.dialogs.confirm(message, { variant });
   } catch {
     return false;
   }

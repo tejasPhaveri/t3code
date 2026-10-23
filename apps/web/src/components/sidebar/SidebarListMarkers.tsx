@@ -144,13 +144,14 @@ export function SidebarProjectGroupHeader(props: {
   project: ProjectFaviconProject | null;
   label: string;
   threadCount: number;
+  tintClassName: string | null;
   toggle: { expanded: boolean; onToggle: () => void };
 }) {
   return (
     <SortableSidebarMarker
       marker={props.marker}
       data-testid="sidebar-project-header"
-      className="mx-0.5 h-8"
+      className={cn("mx-0.5 h-8 rounded-md", props.tintClassName)}
     >
       <CollapsibleSectionHeader
         onClick={props.toggle.onToggle}

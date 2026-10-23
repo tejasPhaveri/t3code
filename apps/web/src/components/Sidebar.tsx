@@ -179,7 +179,9 @@ import {
 import { SidebarDragLifecycle, SidebarPointerSensor } from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
 import { resolveSnoozePresets, snoozeWakeLabel, type SnoozePreset } from "./Sidebar.snooze";
-import { ProjectFavicon } from "./ProjectFavicon";
+import { ProjectFavicon, type ProjectFaviconProject } from "./ProjectFavicon";
+import { projectTintClassName } from "../projectIconColors";
+import { projectAccentColor } from "../projectIdentity";
 import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 import { useStableCallback } from "../hooks/useStableCallback";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -2923,6 +2925,14 @@ export default function Sidebar() {
                     )}
                   >
                     {(() => {
+                      // Each project group is washed in its icon's color so neighbouring groups read apart.
+                      const projectTintFor = (
+                        group: string,
+                        fallback: ProjectFaviconProject | undefined,
+                      ) => {
+                        const project = projectGroupByScopeKey.get(group) ?? fallback;
+                        return project ? projectTintClassName(projectAccentColor(project)) : null;
+                      };
                       const renderThreadRow = (
                         thread: EnvironmentThreadShell,
                         section: SidebarSection,
@@ -3008,6 +3018,14 @@ export default function Sidebar() {
                               ) ?? null
                             }
                             hideProjectIdentity={groupByProject && section === "active"}
+                            projectTintClassName={
+                              groupByProject && section === "active"
+                                ? projectTintFor(
+                                    projectGroupOf(thread),
+                                    projectByKey.get(`${thread.environmentId}:${thread.projectId}`),
+                                  )
+                                : null
+                            }
                             providerEntryByInstanceId={
                               providerEntriesByEnvironment.get(thread.environmentId) ??
                               EMPTY_PROVIDER_ENTRIES
@@ -3076,6 +3094,7 @@ export default function Sidebar() {
                                 "Unknown project"
                               }
                               threadCount={activeGroup?.threads.length ?? 0}
+                              tintClassName={projectTintFor(headerGroup, fallbackProject)}
                               toggle={{
                                 expanded,
                                 onToggle: () => setProjectExpanded(headerGroup, !expanded),

@@ -280,6 +280,75 @@ describe("GitGraphService", () => {
     ),
   );
 
+  it.live("merges a branch into the current branch with a merge commit", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const graph = yield* GitGraphService;
+        yield* git(["switch", "-q", "-c", "feature"]);
+        yield* fs.writeFileString(path.join(repo, "b.txt"), "b\n");
+        yield* git(["add", "b.txt"]);
+        yield* git(["commit", "-q", "-m", "add b"]);
+        yield* git(["switch", "-q", "main"]);
+
+        yield* graph.action({ cwd: repo, action: { _tag: "Merge", ref: "refs/heads/feature" } });
+        const log = yield* graph.log({ cwd: repo, maxCount: 10, showRemoteBranches: true });
+        assert.strictEqual(log.head?.branch, "main");
+        assert.strictEqual(log.commits[0]!.subject, "Merge branch 'feature'");
+        assert.strictEqual(log.commits[0]!.parents.length, 2);
+
+        const bad = yield* graph
+          .action({ cwd: repo, action: { _tag: "Merge", ref: "--abort" } })
+          .pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(bad));
+      }),
+    ),
+  );
+
+  it.live("stops a conflicting merge, then aborts it or commits the resolution", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const graph = yield* GitGraphService;
+        const file = path.join(repo, "a.txt");
+        yield* git(["switch", "-q", "-c", "feature"]);
+        yield* fs.writeFileString(file, "feature\n");
+        yield* git(["commit", "-q", "-am", "feature edit"]);
+        yield* git(["switch", "-q", "main"]);
+        yield* fs.writeFileString(file, "main\n");
+        yield* git(["commit", "-q", "-am", "main edit"]);
+        const merge = () =>
+          graph
+            .action({ cwd: repo, action: { _tag: "Merge", ref: "refs/heads/feature" } })
+            .pipe(Effect.exit);
+        const current = () =>
+          graph.worktrees({ cwd: repo }).pipe(Effect.map((result) => result.worktrees[0]!));
+
+        const conflicted = yield* merge();
+        assert.isTrue(Exit.isFailure(conflicted));
+        assert.include(JSON.stringify(conflicted), "CONFLICT");
+        const stopped = yield* current();
+        assert.isTrue(stopped.merging);
+        assert.deepStrictEqual(stopped.unstaged, [{ path: "a.txt", status: "conflicted" }]);
+
+        yield* graph.action({ cwd: repo, action: { _tag: "MergeAbort" } });
+        assert.isFalse((yield* current()).merging);
+        assert.strictEqual(yield* fs.readFileString(file), "main\n");
+
+        yield* merge();
+        yield* fs.writeFileString(file, "both\n");
+        yield* graph.action({ cwd: repo, action: { _tag: "Stage", paths: ["a.txt"] } });
+        yield* graph.action({ cwd: repo, action: { _tag: "Commit" } });
+        assert.isFalse((yield* current()).merging);
+        const log = yield* graph.log({ cwd: repo, maxCount: 10, showRemoteBranches: true });
+        assert.strictEqual(log.commits[0]!.subject, "Merge branch 'feature'");
+        assert.strictEqual(log.commits[0]!.parents.length, 2);
+      }),
+    ),
+  );
+
   it.live("stashes, pops, and rejects anything that is not a stash selector", () =>
     withRepo(({ repo }) =>
       Effect.gen(function* () {

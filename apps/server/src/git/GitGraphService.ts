@@ -376,6 +376,11 @@ export const make = Effect.gen(function* () {
       maxOutputBytes: STATUS_MAX_OUTPUT_BYTES,
     }).pipe(Effect.map(parseGitStatusV2));
 
+  const isMerging = (cwd: string) =>
+    stdoutOf("mergeHead", cwd, ["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]).pipe(
+      Effect.map((hash) => hash.trim().length > 0),
+    );
+
   const listWorktrees = Effect.fn("GitGraphService.listWorktrees")(function* (cwd: string) {
     const [listed, topLevel] = yield* Effect.all(
       [
@@ -406,7 +411,9 @@ export const make = Effect.gen(function* () {
       const withStatus = yield* Effect.forEach(
         listed,
         (worktree): Effect.Effect<GitGraphWorktree, GitGraphError> =>
-          statusOf(worktree.path).pipe(Effect.map((status) => ({ ...worktree, ...status }))),
+          Effect.all([statusOf(worktree.path), isMerging(worktree.path)], {
+            concurrency: 2,
+          }).pipe(Effect.map(([status, merging]) => ({ ...worktree, ...status, merging }))),
         { concurrency: 4 },
       );
       return {
@@ -511,6 +518,14 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  const findBranch = (cwd: string, fullName: string) =>
+    stdoutOf("refs", cwd, [
+      "for-each-ref",
+      "--format=%(objectname)%1f%(*objectname)%1f%(refname)",
+      "refs/heads",
+      "refs/remotes",
+    ]).pipe(Effect.map((out) => parseGitGraphRefs(out).find((ref) => ref.fullName === fullName)));
+
   const resolveActionCwd = Effect.fn("GitGraphService.resolveActionCwd")(function* (
     input: GitGraphActionInput,
   ) {
@@ -607,23 +622,37 @@ export const make = Effect.gen(function* () {
         }
         case "Commit":
           return {
-            output: yield* runAction("commit", cwd, ["commit", "--cleanup=strip", "-F", "-"], {
-              stdin: act.message,
-              timeoutMs: COMMIT_TIMEOUT_MS,
-            }),
+            output: yield* runAction(
+              "commit",
+              cwd,
+              act.message === undefined
+                ? ["commit", "--no-edit"]
+                : ["commit", "--cleanup=strip", "-F", "-"],
+              {
+                ...(act.message === undefined ? {} : { stdin: act.message }),
+                timeoutMs: COMMIT_TIMEOUT_MS,
+              },
+            ),
           };
+        case "Merge": {
+          // The short name makes git write "Merge branch 'x'"; anything not a branch must be a commit.
+          const target =
+            (yield* findBranch(cwd, act.ref))?.name ?? (yield* resolveCommit(cwd, act.ref));
+          return {
+            output: yield* runAction(
+              "merge",
+              cwd,
+              ["merge", "--no-ff", "--no-edit", "--end-of-options", target],
+              { timeoutMs: COMMIT_TIMEOUT_MS },
+            ),
+          };
+        }
+        case "MergeAbort":
+          return { output: yield* runAction("merge.abort", cwd, ["merge", "--abort"]) };
         case "Fetch":
           return { output: yield* fetchAll(cwd) };
         case "Checkout": {
-          const refs = parseGitGraphRefs(
-            yield* stdoutOf("refs", cwd, [
-              "for-each-ref",
-              "--format=%(objectname)%1f%(*objectname)%1f%(refname)",
-              "refs/heads",
-              "refs/remotes",
-            ]),
-          );
-          const ref = refs.find((candidate) => candidate.fullName === act.ref);
+          const ref = yield* findBranch(cwd, act.ref);
           if (ref?.kind === "head") {
             return { output: yield* runAction("checkout", cwd, ["switch", ref.name]) };
           }

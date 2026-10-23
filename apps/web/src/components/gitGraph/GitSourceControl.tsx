@@ -245,10 +245,17 @@ function WorktreeSection(props: {
     );
     if (confirmed) void props.runAction({ _tag: "Discard", paths: [...paths] }, target);
   };
+  // A merge can be concluded with git's prepared message, so it needs no typed one.
+  const canCommit =
+    !committing && (worktree.merging || (message.trim().length > 0 && worktree.staged.length > 0));
   const commit = async () => {
-    if (committing || message.trim().length === 0 || worktree.staged.length === 0) return;
+    if (!canCommit) return;
     setCommitting(true);
-    const committed = await props.runAction({ _tag: "Commit", message: message.trim() }, target);
+    const trimmed = message.trim();
+    const committed = await props.runAction(
+      { _tag: "Commit", ...(trimmed.length > 0 ? { message: trimmed } : {}) },
+      { ...target, ...(worktree.merging ? { success: "Merge committed" } : {}) },
+    );
     setCommitting(false);
     if (committed) setMessage("");
   };
@@ -279,10 +286,33 @@ function WorktreeSection(props: {
       {expanded ? (
         <div className="pb-2">
           <div className="space-y-1.5 px-2 pb-2">
+            {worktree.merging ? (
+              <div className="flex items-center gap-2 rounded-md bg-warning/10 px-2 py-1.5 text-warning-foreground">
+                <span className="min-w-0 flex-1">
+                  Merging. Resolve conflicts, stage the files, then commit.
+                </span>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() =>
+                    void props.runAction(
+                      { _tag: "MergeAbort" },
+                      { ...target, success: "Merge aborted" },
+                    )
+                  }
+                >
+                  Abort merge
+                </Button>
+              </div>
+            ) : null}
             <Textarea
               size="sm"
               aria-label="Commit message"
-              placeholder="Message (⌘↵ to commit)"
+              placeholder={
+                worktree.merging
+                  ? "Message (blank keeps the merge message)"
+                  : "Message (⌘↵ to commit)"
+              }
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               onKeyDown={(event) => {
@@ -295,10 +325,10 @@ function WorktreeSection(props: {
             <Button
               size="xs"
               className="w-full"
-              disabled={committing || message.trim().length === 0 || worktree.staged.length === 0}
+              disabled={!canCommit}
               onClick={() => void commit()}
             >
-              {committing ? "Committing…" : "Commit"}
+              {committing ? "Committing…" : worktree.merging ? "Commit merge" : "Commit"}
             </Button>
           </div>
           {changeCount === 0 ? <div className="px-3 text-muted-foreground">No changes.</div> : null}
