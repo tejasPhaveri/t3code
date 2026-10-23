@@ -33,6 +33,11 @@ import { ProjectScript, type ProjectMutation } from "./project.ts";
 import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
 import {
+  BrowserPersistence,
+  BrowserProjectSetup,
+  DEFAULT_BROWSER_PERSISTENCE,
+} from "./browserPersistence.ts";
+import {
   DEFAULT_PREVIEW_APPEARANCE,
   DEFAULT_PREVIEW_ZOOM_FACTOR,
   FILL_PREVIEW_VIEWPORT,
@@ -372,6 +377,14 @@ export const ClientSettingsSchema = Schema.Struct({
 
   browserDefaultProfileId: BrowserProfileId.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_PROFILE_ID)),
+  ),
+
+  browserPersistence: BrowserPersistence.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_BROWSER_PERSISTENCE)),
+  ),
+
+  browserProjectSetups: Schema.Record(Schema.String, BrowserProjectSetup).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
   ),
 
   confirmQuit: QuitConfirmationModeSetting.pipe(
@@ -1695,6 +1708,8 @@ export const ClientSettingsPatch = Schema.Struct({
   browserAutoShowFloatingPreview: Schema.optionalKey(Schema.Boolean),
   browserProfiles: Schema.optionalKey(Schema.Array(BrowserProfile)),
   browserDefaultProfileId: Schema.optionalKey(BrowserProfileId),
+  browserPersistence: Schema.optionalKey(BrowserPersistence),
+  browserProjectSetups: Schema.optionalKey(Schema.Record(Schema.String, BrowserProjectSetup)),
   confirmQuit: Schema.optionalKey(QuitConfirmationMode),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),

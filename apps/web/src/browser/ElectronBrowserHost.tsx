@@ -24,19 +24,22 @@ import { HostedBrowserWebview } from "./HostedBrowserWebview";
 import { openUrlInPreview } from "./openFileInPreview";
 import { rendersServerTabNatively } from "./previewRuntime";
 import { previewRuntimeTabId } from "./previewRuntimeTabId";
+import { browserTabNeedsPage, useActivatedBrowserTabs } from "./browserTabActivation";
 
 export function ElectronBrowserHost() {
   const previewByThreadKey = useActivePreviewSessions();
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   useDesktopHostedPreviewSessions(primaryEnvironmentId);
+  const activatedTabIds = useActivatedBrowserTabs();
   const activeSessions = Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
     const threadRef = parseScopedThreadKey(threadKey);
     return threadRef
       ? Object.values(previewState.sessions)
           .filter(
             (snapshot) =>
-              snapshot.runtime !== "server" ||
-              rendersServerTabNatively(threadRef.environmentId, primaryEnvironmentId, snapshot),
+              browserTabNeedsPage(snapshot, activatedTabIds) &&
+              (snapshot.runtime !== "server" ||
+                rendersServerTabNatively(threadRef.environmentId, primaryEnvironmentId, snapshot)),
           )
           .map((snapshot) => ({
             threadRef,

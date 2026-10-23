@@ -4,6 +4,7 @@ import {
   McpCapabilityUnavailableError,
   OrchestratorMcpFailure,
   PreviewAutomationUnavailableError,
+  type ProjectId,
   type ProviderInstanceId,
   type RuntimeMode,
   type ThreadId,
@@ -24,6 +25,8 @@ export interface McpThreadCaller {
   readonly threadId: ThreadId;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
+  /** Set when the credential is issued, so preview tools can share a project browser. */
+  readonly projectId?: ProjectId;
 }
 
 export interface McpClientCaller {

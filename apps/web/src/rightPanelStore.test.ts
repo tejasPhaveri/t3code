@@ -1206,3 +1206,46 @@ describe("rightPanelStore", () => {
     expect(store.getUserActionRevision(refA)).toBe(revision);
   });
 });
+
+describe("reconcileSharedTerminalSurfaces", () => {
+  it("shows another chat's terminals by reference and drops them when they close", () => {
+    const store = useRightPanelStore.getState();
+    store.openTerminal(refA, "term-1");
+
+    store.reconcileSharedTerminalSurfaces(refA, [
+      { ownerThreadId: "thread-B", terminalId: "term-1" },
+    ]);
+    const shared = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(shared.surfaces.map((surface) => surface.id)).toEqual([
+      "terminal:term-1",
+      "terminal:thread-B:term-1",
+    ]);
+    expect(shared.surfaces[1]).toMatchObject({ kind: "terminal", ownerThreadId: "thread-B" });
+
+    store.reconcileSharedTerminalSurfaces(refA, []);
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces.map(
+        (surface) => surface.id,
+      ),
+    ).toEqual(["terminal:term-1"]);
+  });
+});
+
+describe("reconcileGitGraphSurface", () => {
+  it("mirrors the project's Git Graph without taking focus from the active tab", () => {
+    const store = useRightPanelStore.getState();
+    store.openTerminal(refA, "term-1");
+
+    store.reconcileGitGraphSurface(refA, true);
+    const opened = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(opened.surfaces.map((surface) => surface.id)).toEqual(["terminal:term-1", "git-graph"]);
+    expect(opened.activeSurfaceId).toBe("terminal:term-1");
+
+    store.reconcileGitGraphSurface(refA, false);
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces.map(
+        (surface) => surface.id,
+      ),
+    ).toEqual(["terminal:term-1"]);
+  });
+});

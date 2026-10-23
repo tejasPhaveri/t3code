@@ -157,6 +157,16 @@ describe("SessionControl", () => {
     expect(control.generation).toBe(1);
   });
 
+  it("lets one agent control a shared tab at a time", async () => {
+    const control = new SessionControl(null, () => undefined, { exclusiveAgents: true });
+    await expect(control.agent("agent-a", async () => "acted")).resolves.toBe("acted");
+    await expect(control.agent("agent-b", async () => "racing")).rejects.toMatchObject({
+      reason: "agentMismatch",
+    });
+    await expect(control.observe(async () => "read")).resolves.toBe("read");
+    await expect(control.agent("agent-a", async () => "again")).resolves.toBe("again");
+  });
+
   it("lets any agent act on a tab no agent opened, but only while no human controls it", async () => {
     const control = new SessionControl(null);
     await expect(control.agent("agent-a", async () => "acted")).resolves.toBe("acted");

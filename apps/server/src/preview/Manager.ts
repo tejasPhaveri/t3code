@@ -14,6 +14,7 @@ import {
   FILL_PREVIEW_VIEWPORT,
   PreviewSessionLookupError,
   type PreviewSessionSnapshot,
+  previewSessionVisibleTo,
 } from "@t3tools/contracts";
 import {
   isPreviewUrlNormalizationError,
@@ -187,12 +188,21 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         threadId: input.threadId,
         tabId,
         navStatus: input.url
-          ? { _tag: "Loading", url: yield* normalizeUrl(input.url), title: "" }
+          ? {
+              // Nothing loads a lazy tab until it is shown, so it must not claim to be loading.
+              _tag: input.lazy === true ? "Success" : "Loading",
+              url: yield* normalizeUrl(input.url),
+              title: input.title ?? "",
+            }
           : { _tag: "Idle" },
         canGoBack: false,
         canGoForward: false,
         viewport: input.viewport ?? FILL_PREVIEW_VIEWPORT,
         ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
+        ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+        ...(input.persistence === undefined ? {} : { persistence: input.persistence }),
+        ...(input.isolated === undefined ? {} : { isolated: input.isolated }),
+        ...(input.lazy === true && input.url ? { lazy: true } : {}),
         ...(runtime === undefined ? {} : { runtime }),
         ...(runtime === "server" && input.automationOwner !== undefined
           ? { automationOwner: input.automationOwner }
@@ -426,8 +436,15 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     function* (input) {
       return yield* SynchronizedRef.get(stateRef).pipe(
         Effect.map((state): PreviewListResult => ({
-          sessions: sessionsForThread(state, input.threadId)
-            .map((s) => s.snapshot)
+          sessions: [...state.sessions.values()]
+            .filter((session) =>
+              previewSessionVisibleTo(session.snapshot, {
+                threadId: input.threadId,
+                ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+                ...(input.persistence === undefined ? {} : { persistence: input.persistence }),
+              }),
+            )
+            .map((session) => session.snapshot)
             .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt)),
           serverEpoch,
           revision: state.revision,

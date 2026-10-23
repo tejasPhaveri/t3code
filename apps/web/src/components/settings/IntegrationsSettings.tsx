@@ -9,14 +9,18 @@ import {
   BrowserImportFailureReason,
   BROWSER_PROFILE_MAX_COUNT,
   type BrowserLinkTarget,
+  type BrowserPersistence,
   type BrowserProfile,
+  isBrowserPersistence,
   BrowserSearchEngine,
   BROWSER_CUSTOM_SEARCH_URL_MAX_LENGTH,
   type EnvironmentId,
   BROWSER_PROFILE_NAME_MAX_LENGTH,
   BROWSER_RECORDING_FRAME_RATES,
   DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW,
+  DEFAULT_BROWSER_PERSISTENCE,
   DEFAULT_BROWSER_PROFILE_ID,
+  resolveBrowserProfileAccents,
   DEFAULT_BROWSER_LINK_TARGET,
   DEFAULT_BROWSER_RECORDING_FRAME_RATE,
   DEFAULT_BROWSER_SEARCH_ENGINE,
@@ -1148,6 +1152,51 @@ function BrowserAutoShowFloatingPreviewSetting({ disabled }: { readonly disabled
   );
 }
 
+const BROWSER_PERSISTENCE_LABELS: Record<BrowserPersistence, string> = {
+  thread: "Per chat",
+  project: "Per project",
+  environment: "Per environment",
+};
+
+function BrowserPersistenceSetting({ disabled }: { readonly disabled: boolean }) {
+  const persistence = useClientSettings((settings) => settings.browserPersistence);
+  const updateSettings = useUpdatePrimarySettings();
+
+  return (
+    <SettingsRow
+      {...searchableSetting("browser-persistence")}
+      description="Per project keeps the same tabs, cookies, and logins across chats in a project. Per environment shares them across projects. Per chat keeps the previous private browser. An isolated tab always stays in the chat that opened it."
+      resetAction={
+        !disabled && persistence !== DEFAULT_BROWSER_PERSISTENCE ? (
+          <SettingResetButton
+            label="browser persistence"
+            onClick={() => updateSettings({ browserPersistence: DEFAULT_BROWSER_PERSISTENCE })}
+          />
+        ) : null
+      }
+      control={
+        <Select
+          value={persistence}
+          onValueChange={(value) => {
+            if (value !== null && isBrowserPersistence(value)) {
+              updateSettings({ browserPersistence: value });
+            }
+          }}
+        >
+          <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Browser persistence">
+            <SelectValue>{BROWSER_PERSISTENCE_LABELS[persistence]}</SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end">
+            <SelectItem value="project">{BROWSER_PERSISTENCE_LABELS.project}</SelectItem>
+            <SelectItem value="environment">{BROWSER_PERSISTENCE_LABELS.environment}</SelectItem>
+            <SelectItem value="thread">{BROWSER_PERSISTENCE_LABELS.thread}</SelectItem>
+          </SelectPopup>
+        </Select>
+      }
+    />
+  );
+}
+
 function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   const userProfiles = useClientSettings((settings) => settings.browserProfiles);
   const defaultProfileId = useClientSettings((settings) => settings.browserDefaultProfileId);
@@ -1192,6 +1241,7 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   const profileWritesDisabled = disabled || !settingsHydrated;
 
   const profiles = resolveBrowserProfiles(userProfiles);
+  const profileAccents = resolveBrowserProfileAccents(profiles);
   const listedProfiles = profiles.filter((profile) => profile.kind !== "incognito");
   const resolvedDefaultId =
     findBrowserProfile(listedProfiles, defaultProfileId)?.id ?? DEFAULT_BROWSER_PROFILE_ID;
@@ -1206,9 +1256,25 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
     const taken = new Set(resolvedProfiles.map((profile) => profile.name));
     let name = baseName;
     for (let index = 2; taken.has(name); index += 1) name = `${baseName} ${index}`;
-    const profile = { id: `profile-${randomUUID()}`, name, kind: "persistent" as const };
+    const id = `profile-${randomUUID()}`;
+    const color = resolveBrowserProfileAccents([...resolvedProfiles, { id }])[id]!;
+    const profile = { id, name, kind: "persistent" as const, color };
     updateSettings({ browserProfiles: [...currentProfiles, profile] });
     return profile;
+  };
+
+  const setProfileColor = (id: string, color: string) => {
+    if (!settingsHydrated || importInFlightRef.current || !/^#[0-9a-fA-F]{6}$/.test(color)) return;
+    const currentProfiles = getClientSettings().browserProfiles;
+    updateSettings({
+      // Taking another profile's color hands that profile a fresh one, keeping tabs distinguishable.
+      browserProfiles: currentProfiles.map((profile) => {
+        if (profile.id === id) return { ...profile, color };
+        if (profile.color?.toLowerCase() !== color.toLowerCase()) return profile;
+        const { color: _taken, ...rest } = profile;
+        return rest;
+      }),
+    });
   };
 
   const renameProfile = (id: string, next: string) => {
@@ -1414,6 +1480,22 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
               <span className="flex min-w-0 flex-1 items-center gap-2">
                 {builtIn ? (
                   <span
+                    aria-hidden
+                    className="size-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: profileAccents[profile.id] }}
+                  />
+                ) : (
+                  <input
+                    type="color"
+                    aria-label={`${profile.name} tab color`}
+                    className="size-4 shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                    disabled={profileWritesDisabled || importInFlight}
+                    value={profileAccents[profile.id]}
+                    onChange={(event) => setProfileColor(profile.id, event.target.value)}
+                  />
+                )}
+                {builtIn ? (
+                  <span
                     className={cn(
                       "truncate text-sm text-foreground",
                       profileWritesDisabled && "opacity-64",
@@ -1615,6 +1697,7 @@ export function IntegrationsSettingsPanel() {
   const previewDefaultsDisabled = !isElectron;
   const previewDefaults = (
     <>
+      <BrowserPersistenceSetting disabled={previewDefaultsDisabled} />
       <BrowserProfilesSetting disabled={previewDefaultsDisabled} />
       <BrowserViewportSetting disabled={previewDefaultsDisabled} />
       <BrowserZoomSetting disabled={previewDefaultsDisabled} />

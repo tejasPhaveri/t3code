@@ -20,6 +20,7 @@ import {
   PreviewAutomationTimeoutError,
   PreviewAutomationUnsupportedClientError,
   PreviewTabId,
+  type ProjectId,
   type PreviewAutomationError,
   type PreviewAutomationOperation,
   type PreviewAutomationHost,
@@ -48,6 +49,7 @@ export interface PreviewAutomationInvokeInput {
   readonly operation: PreviewAutomationOperation;
   readonly input: unknown;
   readonly tabId?: PreviewTabId;
+  readonly projectId?: ProjectId;
   readonly timeoutMs?: number;
   /** Background metadata reads must not change the agent's current tab. */
   readonly updateCurrentTab?: boolean;
@@ -601,6 +603,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         providerInstanceId: input.scope.thread.providerInstanceId,
       });
     }
+    const projectId = input.projectId ?? input.scope.thread.projectId;
     const { connection, requestId, requestContext, requestSequence } = route;
     const { timeoutMs } = requestContext;
     input.onTargetTab?.(requestContext.tabId);
@@ -629,6 +632,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
             tabId: requestContext.tabId,
             tabIdExplicit: input.tabId !== undefined,
             agentSessionId: hostAssignmentKey(input.scope),
+            ...(projectId === undefined ? {} : { projectId }),
             operation: input.operation,
             input: input.input,
             timeoutMs,

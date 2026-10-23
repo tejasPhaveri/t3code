@@ -1,3 +1,4 @@
+import { openProfileProjectTabs } from "~/browser/BrowserSessionRestorer";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { Dispatch } from "react";
 import type { ThreadPreviewState } from "../../previewStateStore";
@@ -103,12 +104,13 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     }
   };
   const onToggleDiffStable = useStableCallback(onToggleDiff);
-  const createBrowserSurface = (profileId?: string) => {
-    if (!activeThreadRef || !canOperatePreview) return;
+  const openBlankBrowserSurface = (profileId?: string, isolated = false) => {
+    if (!activeThreadRef) return;
     void addBrowserSurface({
       threadRef: activeThreadRef,
       openPreview,
       ...(profileId === undefined ? {} : { profileId }),
+      ...(isolated ? { isolated: true } : {}),
     }).then((result) => {
       if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
       const error = squashAtomCommandFailure(result);
@@ -123,7 +125,22 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
       }
     });
   };
+  const createBrowserSurface = (profileId?: string, isolated = false) => {
+    if (!activeThreadRef || !canOperatePreview) return;
+    // Choosing a profile opens the pages this project is set up with for it.
+    if (profileId === undefined || isolated) {
+      openBlankBrowserSurface(profileId, isolated);
+      return;
+    }
+    void openProfileProjectTabs({ openPreview, threadRef: activeThreadRef, profileId }).then(
+      (opened) => {
+        if (!opened) openBlankBrowserSurface(profileId);
+      },
+    );
+  };
   const createBrowserSurfaceStable = useStableCallback(createBrowserSurface);
+  const createIsolatedBrowserSurface = () => createBrowserSurface(undefined, true);
+  const createIsolatedBrowserSurfaceStable = useStableCallback(createIsolatedBrowserSurface);
   const addDiffSurface = () => {
     if (!activeThreadRef || !isServerThread || !isGitRepo) return;
     useDiffPanelStore.getState().selectGitScope(activeThreadRef, "branch");
@@ -318,6 +335,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     copyRightPanelFilePathStable,
     createBrowserSurface,
     createBrowserSurfaceStable,
+    createIsolatedBrowserSurfaceStable,
     moveRightPanelSurfaceStable,
     onOpenTurnDiffStable,
     onToggleDiffStable,

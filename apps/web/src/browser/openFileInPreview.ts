@@ -26,6 +26,7 @@ import {
 } from "~/previewStateStore";
 import { selectSelectedRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 
+import { previewOpenScope } from "./browserScope";
 import {
   browserDefaultOpenProfileId,
   browserDefaultOpenViewport,
@@ -82,6 +83,10 @@ export async function openUrlInPreview<E>(input: {
       url: input.url,
       viewport: browserDefaultOpenViewport(defaults),
       profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
+      ...previewOpenScope({
+        persistence: defaults.persistence,
+        threadRef: input.threadRef,
+      }),
       ...(runtime === undefined ? {} : { runtime }),
     },
   });

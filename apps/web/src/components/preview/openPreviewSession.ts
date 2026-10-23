@@ -1,4 +1,5 @@
 import type {
+  BrowserPersistence,
   EnvironmentId,
   PreviewOpenInput,
   PreviewRuntime,
@@ -16,6 +17,7 @@ import {
   resolveBrowserDefaults,
 } from "~/browser/browserDefaults";
 import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
+import { previewOpenScope } from "~/browser/browserScope";
 import { previewRuntimeFor } from "~/browser/previewRuntime";
 import { applyPreviewServerSnapshot, rememberPreviewUrl } from "~/previewStateStore";
 
@@ -28,7 +30,12 @@ interface OpenPreviewSessionInput<E> {
   url?: string;
   viewport?: PreviewViewportSetting;
   profileId?: string;
+  projectId?: string;
+  isolated?: boolean;
+  persistence?: BrowserPersistence;
   runtime?: PreviewRuntime;
+  title?: string;
+  lazy?: boolean;
 }
 
 export async function openPreviewSession<E>(
@@ -48,8 +55,16 @@ export async function openPreviewSession<E>(
     input: {
       threadId: input.threadRef.threadId,
       ...(input.url === undefined ? {} : { url: input.url }),
+      ...(input.title === undefined ? {} : { title: input.title }),
+      ...(input.lazy ? { lazy: true } : {}),
       viewport: input.viewport ?? browserDefaultOpenViewport(defaults),
       profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
+      ...previewOpenScope({
+        persistence: input.persistence ?? defaults.persistence,
+        threadRef: input.threadRef,
+        ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+        ...(input.isolated ? { isolated: true } : {}),
+      }),
       ...(runtime === undefined || runtime === "desktop" ? {} : { runtime }),
     },
   });

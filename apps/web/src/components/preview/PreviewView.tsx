@@ -15,6 +15,8 @@ import {
   DEFAULT_PREVIEW_ZOOM_FACTOR,
   PREVIEW_ZOOM_LEVELS,
   type PreviewAdjustInput,
+  BROWSER_PROFILE_NAME_MAX_LENGTH,
+  isBuiltInBrowserProfileId,
 } from "@t3tools/contracts";
 import {
   normalizePreviewUrl,
@@ -34,10 +36,12 @@ import {
 import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
 import { capturePreviewAnnotationScreenshot } from "~/lib/previewAnnotation";
 import { ensureLocalApi } from "~/localApi";
-import { getClientSettings } from "~/hooks/useSettings";
+import { getClientSettings, updateClientSettings } from "~/hooks/useSettings";
+import { locatePreviewSession } from "~/browser/browserScope";
 import {
   rememberPreviewUrl,
   updatePreviewServerSnapshot,
+  useActivePreviewSessions,
   useThreadPreviewState,
 } from "~/previewStateStore";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
@@ -60,6 +64,7 @@ import { useRightPanelStore } from "~/rightPanelStore";
 
 import { previewBridge } from "./previewBridge";
 import { subscribePreviewAction } from "./previewActionBus";
+import { activateBrowserTab } from "~/browser/browserTabActivation";
 import { closePreviewSession } from "./closePreviewSession";
 import { openPreviewSession } from "./openPreviewSession";
 import { showPreviewPopup } from "./showPreviewPopup";
@@ -96,7 +101,9 @@ import {
   useActiveBrowserRecordingTabIds,
 } from "~/browser/browserRecording";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { openProfileProjectTabs } from "~/browser/BrowserSessionRestorer";
+import { TextPromptDialog } from "../TextPromptDialog";
 import { observeResize } from "~/lib/observeResize";
 
 interface Props {
@@ -159,6 +166,7 @@ export function PreviewView({
   const pickActiveRef = useRef<{ cancelled: boolean } | null>(null);
   const isMountedRef = useRef(true);
   const previewState = useThreadPreviewState(threadRef);
+  const previewByThreadKey = useActivePreviewSessions();
   const recentHistoryEntries = useThreadRecentHistory(
     threadRef,
     BROWSER_HISTORY_MAX_ENTRIES_PER_PROJECT,
@@ -190,8 +198,17 @@ export function PreviewView({
   }, []);
 
   const tabId = requestedTabId ?? previewState.activeTabId;
+  useEffect(() => {
+    if (visible && tabId) activateBrowserTab(tabId);
+  }, [tabId, visible]);
+  const located =
+    tabId === null
+      ? null
+      : locatePreviewSession(previewByThreadKey, threadRef.environmentId, tabId);
+  const sessionRef = located?.owner ?? threadRef;
+  const sessionPreview = useThreadPreviewState(sessionRef);
   const runtimeTabId = tabId
-    ? previewRuntimeTabId(threadRef, previewState.serverEpoch, tabId)
+    ? previewRuntimeTabId(sessionRef, sessionPreview.serverEpoch, tabId)
     : null;
   const recordingRuntimeTabId =
     tabId && runtimeTabId
@@ -199,7 +216,7 @@ export function PreviewView({
         ? runtimeTabId
         : findActiveBrowserRecordingRuntimeTabId(threadRef, tabId)
       : null;
-  const snapshot = tabId ? (previewState.sessions[tabId] ?? null) : null;
+  const snapshot = tabId ? (sessionPreview.sessions[tabId] ?? null) : null;
   const nativeServerTab = useRendersServerTabNatively(threadRef.environmentId, snapshot);
   const isServerTab = snapshot?.runtime === "server" && !nativeServerTab;
   const serverOwnsRendering = snapshot?.runtime === "server";
@@ -219,7 +236,7 @@ export function PreviewView({
   const [serverControlledTabId, setServerControlledTabId] = useState<string | null>(null);
   const serverInputDisabled = isServerTab && serverControlledTabId !== runtimeTabId;
   const [serverFrameTabId, setServerFrameTabId] = useState<string | null>(null);
-  const desktopOverlay = tabId ? (previewState.desktopByTabId[tabId] ?? null) : null;
+  const desktopOverlay = tabId ? (sessionPreview.desktopByTabId[tabId] ?? null) : null;
   const layoutZoomFactor = useBrowserLayoutZoomFactor(desktopOverlay?.zoomFactor ?? 1);
   const navStatus = snapshot?.navStatus ?? { _tag: "Idle" as const };
   const url = navStatus._tag === "Idle" ? "" : navStatus.url;
@@ -238,6 +255,30 @@ export function PreviewView({
   // as "every profile".
   const activeProfileId = snapshot?.profileId ?? DEFAULT_BROWSER_PROFILE_ID;
   const activeProfileName = previewProfileName(browserDefaults.profiles, activeProfileId);
+  const [renamingProfile, setRenamingProfile] = useState(false);
+  const renameActiveProfile = (name: string) => {
+    const profiles = getClientSettings().browserProfiles;
+    if (name.length > BROWSER_PROFILE_NAME_MAX_LENGTH) {
+      toastManager.add({
+        type: "error",
+        title: `Profile names are at most ${BROWSER_PROFILE_NAME_MAX_LENGTH} characters`,
+      });
+      return;
+    }
+    const taken = browserDefaults.profiles.some(
+      (profile) =>
+        profile.id !== activeProfileId && profile.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (taken) {
+      toastManager.add({ type: "error", title: `A profile named "${name}" already exists` });
+      return;
+    }
+    void updateClientSettings({
+      browserProfiles: profiles.map((profile) =>
+        profile.id === activeProfileId ? { ...profile, name } : profile,
+      ),
+    });
+  };
   const panelRect = useBrowserSurfaceStore((state) =>
     runtimeTabId ? (state.byTabId[runtimeTabId]?.rect ?? null) : null,
   );
@@ -313,7 +354,7 @@ export function PreviewView({
     if (!tabId) return;
     const result = await adjust({
       environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId, tabId, ...change },
+      input: { threadId: sessionRef.threadId, tabId, ...change },
     });
     if (result._tag === "Failure") {
       const error = squashAtomCommandFailure(result);
@@ -324,7 +365,7 @@ export function PreviewView({
       });
       return;
     }
-    updatePreviewServerSnapshot(threadRef, result.value);
+    updatePreviewServerSnapshot(sessionRef, result.value);
   };
 
   const serverZoomFactor = snapshot?.zoomFactor ?? DEFAULT_PREVIEW_ZOOM_FACTOR;
@@ -362,7 +403,7 @@ export function PreviewView({
     const result = await resize({
       environmentId: threadRef.environmentId,
       input: {
-        threadId: threadRef.threadId,
+        threadId: sessionRef.threadId,
         tabId,
         viewport: nextViewport,
       },
@@ -376,7 +417,7 @@ export function PreviewView({
       });
       throw error;
     }
-    updatePreviewServerSnapshot(threadRef, result.value);
+    updatePreviewServerSnapshot(sessionRef, result.value);
   };
 
   const handleToggleDeviceToolbar = () => {
@@ -455,7 +496,7 @@ export function PreviewView({
       return;
     }
     useRightPanelStore.getState().openBrowser(threadRef, result.value.tabId);
-    await closePreviewSession({ closePreview, snapshot, tabId, threadRef });
+    await closePreviewSession({ closePreview, snapshot, tabId, threadRef: sessionRef });
   };
 
   const handlePictureInPicture = () => {
@@ -943,12 +984,47 @@ export function PreviewView({
         }
         leadingActions={
           activeProfileId !== browserDefaults.profileId ? (
-            <Tooltip>
-              <TooltipTrigger render={<Badge variant="outline" className="max-w-28 shrink-0" />}>
+            <Menu>
+              <MenuTrigger
+                render={
+                  <Badge
+                    variant="outline"
+                    className="max-w-28 shrink-0 cursor-pointer"
+                    render={<button type="button" aria-label={`Profile ${activeProfileName}`} />}
+                  />
+                }
+              >
                 <span className="truncate">{activeProfileName}</span>
-              </TooltipTrigger>
-              <TooltipPopup side="top">{activeProfileName}</TooltipPopup>
-            </Tooltip>
+              </MenuTrigger>
+              <MenuPopup align="start" className="max-w-64">
+                <MenuItem
+                  disabled={isBuiltInBrowserProfileId(activeProfileId)}
+                  onClick={() => setRenamingProfile(true)}
+                >
+                  Rename profile…
+                </MenuItem>
+                <MenuItem
+                  onClick={() =>
+                    void openProfileProjectTabs({
+                      openPreview: open,
+                      threadRef,
+                      profileId: activeProfileId,
+                    }).then((opened) => {
+                      if (!opened) {
+                        toastManager.add({
+                          type: "info",
+                          title: `No project tabs for ${activeProfileName}`,
+                          description:
+                            "Add some with Browser ⌄ → Set up project tabs… in the panel's + menu.",
+                        });
+                      }
+                    })
+                  }
+                >
+                  Open project tabs for this profile
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
           ) : null
         }
         trailingActions={
@@ -1001,7 +1077,7 @@ export function PreviewView({
                 key={runtimeTabId}
                 ref={serverSurfaceRef}
                 environmentId={threadRef.environmentId}
-                threadId={threadRef.threadId}
+                threadId={sessionRef.threadId}
                 tabId={snapshot.tabId}
                 pdfUrl={
                   navStatus._tag === "Success"
@@ -1013,7 +1089,7 @@ export function PreviewView({
                 onControl={(control) =>
                   setServerControlledTabId(control?.controller === "you" ? runtimeTabId : null)
                 }
-                onPopup={(popupTabId) => showPreviewPopup(threadRef, popupTabId, "panel")}
+                onPopup={(popupTabId) => showPreviewPopup(sessionRef, popupTabId, "panel")}
                 // Stays connected under the empty state so a URL picked there reaches the page.
                 className={cn(
                   "absolute inset-0 h-full w-full",
@@ -1085,6 +1161,18 @@ export function PreviewView({
           </div>
         ) : null}
       </div>
+      {renamingProfile ? (
+        <TextPromptDialog
+          prompt={{
+            title: "Rename profile",
+            placeholder: "Profile name",
+            initialValue: activeProfileName,
+            confirmLabel: "Rename",
+            onConfirm: renameActiveProfile,
+          }}
+          onClose={() => setRenamingProfile(false)}
+        />
+      ) : null}
     </div>
   );
 }

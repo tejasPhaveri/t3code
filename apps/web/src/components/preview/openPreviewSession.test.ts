@@ -84,6 +84,7 @@ describe("openPreviewSession", () => {
           url: input.url,
           viewport,
           profileId: "work",
+          persistence: "project",
         },
       });
     },

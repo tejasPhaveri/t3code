@@ -143,6 +143,15 @@ import {
   VcsStatusStreamEvent,
 } from "./git.ts";
 import {
+  GitGraphActionInput,
+  GitGraphActionResult,
+  GitGraphError,
+  GitGraphLogInput,
+  GitGraphLogResult,
+  GitGraphWorktreesInput,
+  GitGraphWorktreesResult,
+} from "./gitGraph.ts";
+import {
   ReviewDiffFileContentsInput,
   ReviewDiffFileContentsResult,
   ReviewDiffPreviewError,
@@ -436,6 +445,10 @@ export const WS_METHODS = {
   gitRunStackedAction: "git.runStackedAction",
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
+
+  gitGraphLog: "gitGraph.log",
+  gitGraphWorktrees: "gitGraph.worktrees",
+  gitGraphAction: "gitGraph.action",
 
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewGetDiffFileContents: "review.getDiffFileContents",
@@ -1432,6 +1445,24 @@ const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
   error: Schema.Union([VcsError, EnvironmentAuthorizationError]),
 });
 
+const WsGitGraphLogRpc = Rpc.make(WS_METHODS.gitGraphLog, {
+  payload: GitGraphLogInput,
+  success: GitGraphLogResult,
+  error: Schema.Union([GitGraphError, EnvironmentAuthorizationError]),
+});
+
+const WsGitGraphWorktreesRpc = Rpc.make(WS_METHODS.gitGraphWorktrees, {
+  payload: GitGraphWorktreesInput,
+  success: GitGraphWorktreesResult,
+  error: Schema.Union([GitGraphError, EnvironmentAuthorizationError]),
+});
+
+const WsGitGraphActionRpc = Rpc.make(WS_METHODS.gitGraphAction, {
+  payload: GitGraphActionInput,
+  success: GitGraphActionResult,
+  error: Schema.Union([GitGraphError, EnvironmentAuthorizationError]),
+});
+
 const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPreview, {
   payload: ReviewDiffPreviewInput,
   success: ReviewDiffPreviewResult,
@@ -2023,6 +2054,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
   WsVcsInitRpc,
+  WsGitGraphLogRpc,
+  WsGitGraphWorktreesRpc,
+  WsGitGraphActionRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
   WsTerminalOpenRpc,

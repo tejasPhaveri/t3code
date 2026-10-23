@@ -14,7 +14,7 @@ import {
   type EnvironmentId,
   type ProjectScript,
   type ScopedThreadRef,
-  type ThreadId,
+  ThreadId,
 } from "@t3tools/contracts";
 import { projectScriptTerminalInput } from "@t3tools/shared/projectScripts";
 import { type SetStateAction } from "react";
@@ -326,6 +326,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     if (
       !activeThreadRef ||
       activeRightPanelSurface?.kind !== "terminal" ||
+      activeRightPanelSurface.ownerThreadId !== undefined ||
       activeRightPanelSurface.terminalIds.length >= MAX_TERMINALS_PER_GROUP
     ) {
       return;
@@ -361,8 +362,13 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
       activeRightPanelSurface?.kind !== "terminal"
     )
       return;
-    terminalActions.closeTerminalSession(terminalId);
-    storeCloseTerminal(activeThreadRef, terminalId);
+    const ownerThreadId = activeRightPanelSurface.ownerThreadId;
+    if (ownerThreadId === undefined) {
+      terminalActions.closeTerminalSession(terminalId);
+      storeCloseTerminal(activeThreadRef, terminalId);
+    } else {
+      terminalActions.closeTerminalSession(terminalId, ThreadId.make(ownerThreadId));
+    }
     useRightPanelStore
       .getState()
       .closeTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);

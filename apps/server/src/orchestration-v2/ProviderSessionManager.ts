@@ -10,6 +10,7 @@ import {
   OrchestrationV2RuntimeRequest,
   ProviderInstanceId,
   ProviderSessionId,
+  type ProjectId,
   ThreadId,
   type ProviderThreadId,
 } from "@t3tools/contracts";
@@ -443,6 +444,13 @@ export const layerWithOptions = (
           : mcpPrepareLock.withLock(
               threadId,
               Effect.gen(function* () {
+                const projectId = yield* projectionStore.getThread(threadId).pipe(
+                  Effect.map((thread) => thread.projectId),
+                  Effect.orElseSucceed((): ProjectId | undefined => undefined),
+                );
+                if (projectId !== undefined) {
+                  yield* mcpSessionRegistry.setThreadProject(threadId, projectId);
+                }
                 // Reuse a still-valid credential for this thread instead of
                 // rotating: long-lived provider processes (codex app-server)
                 // build their MCP client once per conversation and keep using
@@ -490,6 +498,7 @@ export const layerWithOptions = (
                   providerInstanceId,
                   browserToolsAvailable,
                   capabilities,
+                  ...(projectId === undefined ? {} : { projectId }),
                 });
                 yield* mcpSessions.set(credential.config);
                 reserveMcpCredential(threadId, credential.config.providerSessionId);

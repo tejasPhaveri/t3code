@@ -1,4 +1,4 @@
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { type ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -22,6 +22,7 @@ export interface McpCredentialRequest {
    */
   readonly browserToolsAvailable?: boolean;
   readonly capabilities?: ReadonlySet<McpInvocationContext.McpCapability>;
+  readonly projectId?: ProjectId;
 }
 
 export interface McpIssuedCredential {
@@ -34,6 +35,7 @@ export interface McpSessionRegistryShape {
     rawToken: string,
   ) => Effect.Effect<McpInvocationContext.McpThreadInvocationScope | undefined>;
   readonly touch: (threadId: ThreadId) => Effect.Effect<void>;
+  readonly setThreadProject: (threadId: ThreadId, projectId: ProjectId) => Effect.Effect<void>;
   readonly revokeProviderSession: (providerSessionId: string) => Effect.Effect<void>;
   readonly revokeThread: (threadId: ThreadId) => Effect.Effect<void>;
   readonly revokeAll: Effect.Effect<void>;
@@ -109,6 +111,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           threadId: ThreadId.make(request.threadId),
           providerSessionId,
           providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
+          ...(request.projectId === undefined ? {} : { projectId: request.projectId }),
         },
         client: undefined,
         capabilities: new Set<McpInvocationContext.McpCapability>([
@@ -171,6 +174,25 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     },
   );
 
+  const setThreadProject: McpSessionRegistryShape["setThreadProject"] = Effect.fn(
+    "McpSessionRegistry.setThreadProject",
+  )(function* (threadId, projectId) {
+    yield* SynchronizedRef.update(state, ({ records }) => {
+      const next = new Map(records);
+      for (const [tokenHash, record] of records) {
+        if (record.scope.thread.threadId !== threadId) continue;
+        next.set(tokenHash, {
+          ...record,
+          scope: {
+            ...record.scope,
+            thread: { ...record.scope.thread, projectId },
+          },
+        });
+      }
+      return { records: next };
+    });
+  });
+
   const revokeWhere = (predicate: (record: CredentialRecord) => boolean) =>
     SynchronizedRef.update(state, ({ records }) => ({
       records: new Map(Array.from(records).filter(([, record]) => !predicate(record))),
@@ -180,6 +202,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     issue,
     resolve,
     touch,
+    setThreadProject,
     revokeProviderSession: Effect.fn("McpSessionRegistry.revokeProviderSession")(
       function* (providerSessionId) {
         yield* revokeWhere((record) => record.scope.thread.providerSessionId === providerSessionId);

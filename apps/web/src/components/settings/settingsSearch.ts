@@ -706,6 +706,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["xcode android studio sdk avd runtime"],
   },
   {
+    id: "browser-persistence",
+    title: "Browser persistence",
+    to: "/settings/integrations",
+    targetId: "browser",
+    searchTerms: ["tabs profiles cookies chats project environment share isolated"],
+  },
+  {
     id: "browser-profiles",
     title: "Browser profiles",
     to: "/settings/integrations",

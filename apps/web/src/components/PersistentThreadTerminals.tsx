@@ -414,6 +414,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
       ]}
       activeTerminalGroupId={surface.id}
       focusRequestId={focusRequestId}
+      layoutActions={surface.ownerThreadId === undefined}
       onSplitTerminal={onSplitTerminal}
       onSplitTerminalVertical={onSplitTerminalVertical}
       onNewTerminal={onNewTerminal}

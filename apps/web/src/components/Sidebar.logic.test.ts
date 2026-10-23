@@ -6,7 +6,10 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import {
   archiveSelectedThreadEntries,
+  arrangeSidebarProjectBlocks,
   deleteSelectedThreadEntries,
+  groupSidebarThreadsByProject,
+  sidebarProjectHeaderMarker,
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
   resolveSidebarRowThreadId,
@@ -1212,6 +1215,83 @@ describe("Working shelf (beta)", () => {
         unpin: true,
         unsettle: false,
         unsnooze: false,
+      });
+    });
+  });
+});
+
+describe("project groups in the active section", () => {
+  const groupOf = (thread: { readonly project: string }) => thread.project;
+
+  it("orders groups by their newest thread and keeps each group's row order", () => {
+    const keyedOld = { id: "x-keyed-old", project: "x" };
+    const newest = { id: "w-newest", project: "w" };
+    const fresh = { id: "x-fresh", project: "x" };
+    const groups = groupSidebarThreadsByProject({
+      // A manual drop left the old x thread above the newest one.
+      threads: [keyedOld, newest, fresh],
+      recency: [newest, fresh, keyedOld],
+      groupOf,
+    });
+    expect(groups.map(({ group, threads }) => [group, threads.map(({ id }) => id)])).toEqual([
+      ["w", ["w-newest"]],
+      ["x", ["x-keyed-old", "x-fresh"]],
+    ]);
+  });
+
+  it("places a row without a block in front of the block it was dropped above", () => {
+    const rows = [
+      { id: "x1", project: "x" },
+      { id: "n1", project: "new" },
+      { id: "w1", project: "w" },
+      { id: "tail", project: "late" },
+    ];
+    expect(
+      arrangeSidebarProjectBlocks(["x", "w", "empty"], rows, groupOf).map(({ group, rows }) => [
+        group,
+        rows.map(({ id }) => id),
+      ]),
+    ).toEqual([
+      ["x", ["x1"]],
+      ["new", ["n1"]],
+      ["w", ["w1"]],
+      ["empty", []],
+      ["late", ["tail"]],
+    ]);
+  });
+
+  describe("drop targets", () => {
+    const header = (group: string): SidebarListItem => ({
+      kind: "marker",
+      marker: sidebarProjectHeaderMarker(group),
+    });
+    const row = (key: string, section: SidebarSection, group: string): SidebarListItem => ({
+      kind: "thread",
+      key,
+      section,
+      group,
+    });
+    const items: readonly SidebarListItem[] = [
+      { kind: "marker", marker: "pinned-header" },
+      row("p", "pinned", "w"),
+      { kind: "marker", marker: "pinned-divider" },
+      header("x"),
+      row("x1", "active", "x"),
+      row("x2", "active", "x"),
+      header("w"),
+      row("w1", "active", "w"),
+      { kind: "marker", marker: "settled-header" },
+    ];
+
+    it("keeps a row hovered over another project inside its own group", () => {
+      expect(resolveSidebarDropTarget(items, "x1", "w1")?.activeOrder).toEqual(["x2", "x1", "w1"]);
+    });
+
+    it("unpins a row into its own project's group", () => {
+      expect(resolveSidebarDropTarget(items, "p", "x2")).toEqual({
+        section: "active",
+        pinnedOrder: [],
+        activeOrder: ["x1", "x2", "p", "w1"],
       });
     });
   });

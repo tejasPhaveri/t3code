@@ -101,6 +101,7 @@ describe("reopenClosedView", () => {
         url: "https://example.com",
         viewport: snapshot.viewport,
         profileId: "work",
+        persistence: "project",
       },
     });
     expect(readThreadPreviewState(threadRef).snapshot?.tabId).toBe("new-tab");

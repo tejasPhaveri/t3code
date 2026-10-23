@@ -1,6 +1,9 @@
 import {
+  DEFAULT_BROWSER_PERSISTENCE,
   DEFAULT_BROWSER_PROFILE_ID,
+  resolveBrowserProfileAccents,
   resolveBrowserProfiles,
+  type BrowserPersistence,
   type BrowserProfile,
   type DesktopPreviewTabDefaults,
   type PreviewAppearancePreference,
@@ -21,7 +24,9 @@ export interface BrowserDefaults {
   readonly appearance: PreviewAppearancePreference;
   readonly autoShowFloatingPreview: boolean;
   readonly profiles: ReadonlyArray<BrowserProfile>;
+  readonly profileAccents: Readonly<Record<string, string>>;
   readonly profileId: string;
+  readonly persistence: BrowserPersistence;
 }
 
 const toBrowserDefaults = (settings: {
@@ -31,6 +36,7 @@ const toBrowserDefaults = (settings: {
   readonly browserAutoShowFloatingPreview: boolean;
   readonly browserProfiles: ReadonlyArray<BrowserProfile>;
   readonly browserDefaultProfileId: string;
+  readonly browserPersistence?: BrowserPersistence;
 }): BrowserDefaults => {
   const profiles = resolveBrowserProfiles(settings.browserProfiles);
   return {
@@ -39,6 +45,8 @@ const toBrowserDefaults = (settings: {
     appearance: settings.browserDefaultAppearance,
     autoShowFloatingPreview: settings.browserAutoShowFloatingPreview,
     profiles,
+    profileAccents: resolveBrowserProfileAccents(profiles),
+    persistence: settings.browserPersistence ?? DEFAULT_BROWSER_PERSISTENCE,
     profileId:
       profiles.find(
         (profile) =>

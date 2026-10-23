@@ -1,6 +1,7 @@
 import {
   BUILT_IN_BROWSER_PROFILES,
   DEFAULT_BROWSER_PROFILE_ID,
+  resolveBrowserProfileAccents,
   DEFAULT_PREVIEW_APPEARANCE,
   DEFAULT_PREVIEW_ZOOM_FACTOR,
   EnvironmentId,
@@ -46,7 +47,9 @@ const STUB_BROWSER_DEFAULTS = {
   appearance: DEFAULT_PREVIEW_APPEARANCE,
   autoShowFloatingPreview: true,
   profiles: BUILT_IN_BROWSER_PROFILES,
+  profileAccents: resolveBrowserProfileAccents(BUILT_IN_BROWSER_PROFILES),
   profileId: DEFAULT_BROWSER_PROFILE_ID,
+  persistence: "project" as const,
 };
 
 // The desktop bridge only exists inside Electron; the view reads it once at import.

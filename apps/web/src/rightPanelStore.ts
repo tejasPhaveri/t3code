@@ -21,6 +21,7 @@ const RIGHT_PANEL_KINDS = [
   "terminal",
   "pull-request",
   "pull-requests",
+  "git-graph",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -44,8 +45,11 @@ export type RightPanelSurface =
       terminalIds: string[];
       activeTerminalId: string;
       splitDirection?: "horizontal" | "vertical";
+      /** Set when the terminal belongs to another chat in the project and is shown here by reference. */
+      ownerThreadId?: string;
     }
   | { id: "diff"; kind: "diff" }
+  | { id: "git-graph"; kind: "git-graph" }
   | {
       id: "files";
       kind: "files";
@@ -187,6 +191,13 @@ interface RightPanelStoreState {
     hiddenTabIds?: ReadonlySet<string>,
   ) => void;
   reconcileFileSurfaces: (ref: ScopedThreadRef, workspaceAvailable: boolean) => void;
+  /** Shows or hides the Git Graph tab to match its project, without changing which tab is active. */
+  reconcileGitGraphSurface: (ref: ScopedThreadRef, open: boolean) => void;
+  /** Mirrors the terminals other chats in scope own, one tab each; this chat's own tabs are untouched. */
+  reconcileSharedTerminalSurfaces: (
+    ref: ScopedThreadRef,
+    terminals: ReadonlyArray<{ readonly ownerThreadId: string; readonly terminalId: string }>,
+  ) => void;
   show: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
   setMaximized: (ref: ScopedThreadRef, maximized: boolean) => void;
@@ -225,6 +236,8 @@ const singletonSurface = (
       return { id: "files", kind };
     case "pull-requests":
       return { id: "pull-requests", kind };
+    case "git-graph":
+      return { id: "git-graph", kind };
     case "device":
       return { id: "device", kind };
   }
@@ -262,6 +275,18 @@ const terminalSurface = (terminalId: string): RightPanelSurface => ({
   resourceId: terminalId,
   terminalIds: [terminalId],
   activeTerminalId: terminalId,
+});
+
+const sharedTerminalSurface = (terminal: {
+  readonly ownerThreadId: string;
+  readonly terminalId: string;
+}): RightPanelSurface => ({
+  id: `terminal:${terminal.ownerThreadId}:${terminal.terminalId}`,
+  kind: "terminal",
+  resourceId: terminal.terminalId,
+  terminalIds: [terminal.terminalId],
+  activeTerminalId: terminal.terminalId,
+  ownerThreadId: terminal.ownerThreadId,
 });
 
 export type PullRequestSurface = Extract<RightPanelSurface, { kind: "pull-request" }>;
@@ -997,6 +1022,49 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             };
           }),
         ),
+      reconcileGitGraphSurface: (ref, open) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) => {
+            const present = current.surfaces.some((surface) => surface.kind === "git-graph");
+            if (present === open) return current;
+            const surfaces = open
+              ? [...current.surfaces, singletonSurface("git-graph")]
+              : current.surfaces.filter((surface) => surface.kind !== "git-graph");
+            return {
+              ...current,
+              surfaces,
+              activeSurfaceId:
+                current.activeSurfaceId !== null &&
+                surfaces.some((surface) => surface.id === current.activeSurfaceId)
+                  ? current.activeSurfaceId
+                  : (surfaces[0]?.id ?? null),
+            };
+          }),
+        ),
+      reconcileSharedTerminalSurfaces: (ref, terminals) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) => {
+            const wanted = terminals.map(sharedTerminalSurface);
+            const wantedIds = new Set(wanted.map((surface) => surface.id));
+            const kept = current.surfaces.filter(
+              (surface) =>
+                surface.kind !== "terminal" ||
+                surface.ownerThreadId === undefined ||
+                wantedIds.has(surface.id),
+            );
+            const knownIds = new Set(kept.map((surface) => surface.id));
+            const added = wanted.filter((surface) => !knownIds.has(surface.id));
+            if (added.length === 0 && kept.length === current.surfaces.length) return current;
+            const surfaces = [...kept, ...added];
+            return {
+              ...current,
+              surfaces,
+              activeSurfaceId: surfaces.some((surface) => surface.id === current.activeSurfaceId)
+                ? current.activeSurfaceId
+                : (surfaces[0]?.id ?? null),
+            };
+          }),
+        ),
       reconcileFileSurfaces: (ref, workspaceAvailable) =>
         set((state) =>
           automaticUpdate(state, scopedThreadKey(ref), (current) => {
@@ -1151,8 +1219,10 @@ useRightPanelStore.subscribe((next, previous) => {
       ...removed.filter((surface) => surface.id === before.activeSurfaceId),
     ];
     for (const surface of closedInOrder) {
+      // Git Graph reopens through its project, which a remembered tab would bypass.
       if (
         surface.kind === "terminal" ||
+        surface.kind === "git-graph" ||
         (surface.kind === "preview" && surface.resourceId !== null)
       )
         continue;

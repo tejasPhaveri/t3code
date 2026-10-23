@@ -94,6 +94,11 @@ On web and desktop, the list also animates section changes made with thread acti
 preference. While dragging, rows follow the insertion gap without replaying a second transition
 after the drop.
 
+On web and desktop, active threads are grouped under a header for each project, with the project
+holding the newest thread first. Click a project header to collapse or expand its threads. Dragging
+reorders a thread within its project's group. Pinned threads stay in one list above the groups.
+Choosing a project in the filter shows that project's threads as a single list.
+
 New threads appear above the active threads you have arranged. Settling clears a thread's active
 position, so using **Un-settle** returns it to the top. Pinning and snoozing preserve its active
 position until you move it again. Thread activity does not change the order. The settled shelf

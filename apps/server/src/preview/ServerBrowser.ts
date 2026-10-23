@@ -8,8 +8,10 @@ import {
   findBrowserProfile,
   INCOGNITO_BROWSER_PROFILE_ID,
   resolveBrowserProfiles,
+  type BrowserPersistence,
   type BrowserProfile,
   type PreviewReportProfilesInput,
+  previewSessionVisibleTo,
   PREVIEW_AUTOMATION_SERVER_OPERATIONS,
   PreviewViewportSetting as PreviewViewportSettingSchema,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
@@ -38,6 +40,7 @@ import {
   type PreviewNavStatus,
   type PreviewSessionSnapshot,
   type PreviewViewportSetting,
+  ProjectId,
   ThreadId,
   SERVER_BROWSER_AUTOMATION_CLIENT_ID,
   type PreviewAppearancePreference,
@@ -293,6 +296,9 @@ interface ServerTab {
 
   readonly desktop: { readonly close: () => Promise<void> } | null;
   readonly profileId: string | undefined;
+  readonly projectId: string | undefined;
+  readonly persistence: BrowserPersistence | undefined;
+  readonly shareIsolated: boolean;
   readonly openerTabId: string | undefined;
 
   readonly downloads: Array<ServerDownload>;
@@ -744,8 +750,13 @@ const make = Effect.gen(function* () {
     if (!desktop) await recordCopies(cdp);
     page.setDefaultTimeout(NAVIGATION_TIMEOUT_MS);
     page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
-    const control = new SessionControl(snapshot.automationOwner ?? null, () =>
-      ServerBrowserPage.invalidateRefs(page),
+    const sharesAgents =
+      (snapshot.persistence === "project" || snapshot.persistence === "environment") &&
+      snapshot.isolated !== true;
+    const control = new SessionControl(
+      snapshot.automationOwner ?? null,
+      () => ServerBrowserPage.invalidateRefs(page),
+      { exclusiveAgents: sharesAgents },
     );
     const tab: ServerTab = {
       threadId: ThreadId.make(snapshot.threadId),
@@ -766,6 +777,9 @@ const make = Effect.gen(function* () {
       isolatedContext,
       desktop: desktop === null ? null : { close: desktop.close },
       profileId: snapshot.profileId,
+      projectId: snapshot.projectId,
+      persistence: snapshot.persistence,
+      shareIsolated: snapshot.isolated === true,
       openerTabId: adopted?.openerTabId,
       downloads: [],
       fileChooser: null,
@@ -1202,6 +1216,9 @@ const make = Effect.gen(function* () {
         ...(/^https?:/i.test(url) ? { url } : {}),
         runtime: "server",
         ...(opener.profileId === undefined ? {} : { profileId: opener.profileId }),
+        ...(opener.projectId === undefined ? {} : { projectId: ProjectId.make(opener.projectId) }),
+        ...(opener.persistence === undefined ? {} : { persistence: opener.persistence }),
+        ...(opener.shareIsolated ? { isolated: true } : {}),
         ...(opener.control.agentId === null
           ? {}
           : { automationOwner: opener.control.agentId, reveal: false }),
@@ -1246,10 +1263,19 @@ const make = Effect.gen(function* () {
     return opening;
   };
 
-  const findTab = Effect.fn("ServerBrowser.findTab")(function* (threadId: string, tabId: string) {
-    const existing = tabs.get(tabKey(threadId, tabId));
+  const findTab = Effect.fn("ServerBrowser.findTab")(function* (
+    threadId: string,
+    tabId: string,
+    projectId?: string,
+  ) {
+    const existing = [...tabs.values()].find(
+      (tab) => tab.tabId === tabId && tabSharesScope(tab, threadId, projectId),
+    );
     if (existing) return existing;
-    const { sessions } = yield* manager.list({ threadId: ThreadId.make(threadId) });
+    const { sessions } = yield* manager.list({
+      threadId: ThreadId.make(threadId),
+      ...scopeOpenFields(projectId),
+    });
     const snapshot = sessions.find(
       (session) => session.tabId === tabId && session.runtime === "server",
     );
@@ -1288,8 +1314,8 @@ const make = Effect.gen(function* () {
     }
   };
 
-  const latestThreadTab = (threadId: string, agentSessionId?: string) => {
-    const threadTabs = [...tabs.values()].filter((tab) => tab.threadId === threadId);
+  const latestThreadTab = (threadId: string, agentSessionId?: string, projectId?: string) => {
+    const threadTabs = [...tabs.values()].filter((tab) => tabSharesScope(tab, threadId, projectId));
     return (
       threadTabs
         .filter((tab) => tab.control.agentId === agentSessionId)
@@ -1313,6 +1339,7 @@ const make = Effect.gen(function* () {
     readonly profiles: ReadonlyArray<BrowserProfile>;
     readonly defaultProfileId: string;
   } | null = null;
+  let reportedPersistence: BrowserPersistence | null = null;
 
   const reportProfiles: ServerBrowser["Service"]["reportProfiles"] = (input) =>
     Effect.sync(() => {
@@ -1322,7 +1349,29 @@ const make = Effect.gen(function* () {
         defaultProfileId:
           findBrowserProfile(profiles, input.defaultProfileId)?.id ?? DEFAULT_BROWSER_PROFILE_ID,
       };
+      if (input.persistence !== undefined) reportedPersistence = input.persistence;
     });
+
+  const tabSharesScope = (tab: ServerTab, threadId: string, projectId?: string) =>
+    previewSessionVisibleTo(
+      {
+        threadId: tab.threadId,
+        ...(tab.projectId === undefined ? {} : { projectId: tab.projectId }),
+        ...(tab.persistence === undefined ? {} : { persistence: tab.persistence }),
+        ...(tab.shareIsolated ? { isolated: true } : {}),
+      },
+      {
+        threadId,
+        ...(projectId === undefined ? {} : { projectId }),
+        persistence: reportedPersistence ?? "thread",
+      },
+    );
+
+  const scopeOpenFields = (projectId: string | undefined, isolated?: boolean) => ({
+    ...(reportedPersistence === null ? {} : { persistence: reportedPersistence }),
+    ...(projectId === undefined ? {} : { projectId: ProjectId.make(projectId) }),
+    ...(isolated ? { isolated: true as const } : {}),
+  });
 
   const profileStatus = () => {
     const profiles = reportedProfiles?.profiles ?? BUILT_IN_BROWSER_PROFILES;
@@ -1388,7 +1437,7 @@ const make = Effect.gen(function* () {
       viewportSetting: tab.setting,
       ...(viewport ? { viewport } : {}),
       tabs: [...tabs.values()]
-        .filter((candidate) => candidate.threadId === tab.threadId)
+        .filter((candidate) => tabSharesScope(candidate, tab.threadId, tab.projectId))
         .map((candidate) => ({
           tabId: candidate.tabId,
           url: candidate.page.url() === "about:blank" ? null : candidate.page.url(),
@@ -1675,7 +1724,9 @@ const make = Effect.gen(function* () {
     if (!request.agentSessionId)
       throw new BrowserControlInterrupted("The agent session is missing. Reconnect the provider.");
     const owned = [...tabs.values()].filter(
-      (tab) => tab.threadId === request.threadId && tab.control.agentId === request.agentSessionId,
+      (tab) =>
+        tabSharesScope(tab, request.threadId, request.projectId) &&
+        tab.control.agentId === request.agentSessionId,
     );
     if (!request.tabIdExplicit && owned.length > 1)
       throw new BrowserControlInterrupted(
@@ -1684,9 +1735,11 @@ const make = Effect.gen(function* () {
       );
     const tab =
       request.tabId === undefined
-        ? latestThreadTab(request.threadId, request.agentSessionId)
+        ? latestThreadTab(request.threadId, request.agentSessionId, request.projectId)
         : await Effect.runPromise(
-            findTab(request.threadId, request.tabId).pipe(Effect.orElseSucceed(constVoid)),
+            findTab(request.threadId, request.tabId, request.projectId).pipe(
+              Effect.orElseSucceed(constVoid),
+            ),
           );
     if (!tab) {
       throw new ServerBrowserPage.ServerBrowserOperationError(
@@ -1706,7 +1759,7 @@ const make = Effect.gen(function* () {
     const now = Date.now();
     for (const tab of tabs.values()) {
       if (
-        tab.threadId === request.threadId &&
+        tabSharesScope(tab, request.threadId, request.projectId) &&
         (tab.control.agentId === request.agentSessionId || tab.tabId === request.tabId)
       )
         tab.usedAt = now;
@@ -1722,8 +1775,12 @@ const make = Effect.gen(function* () {
       case "status":
         return statusWithTitle(
           request.tabId === undefined
-            ? latestThreadTab(request.threadId, request.agentSessionId)
-            : tabs.get(tabKey(request.threadId, request.tabId)),
+            ? latestThreadTab(request.threadId, request.agentSessionId, request.projectId)
+            : [...tabs.values()].find(
+                (tab) =>
+                  tab.tabId === request.tabId &&
+                  tabSharesScope(tab, request.threadId, request.projectId),
+              ),
           request.agentSessionId,
         );
       case "open": {
@@ -1739,7 +1796,8 @@ const make = Effect.gen(function* () {
           !request.tabIdExplicit &&
           [...tabs.values()].filter(
             (tab) =>
-              tab.threadId === request.threadId && tab.control.agentId === request.agentSessionId,
+              tabSharesScope(tab, request.threadId, request.projectId) &&
+              tab.control.agentId === request.agentSessionId,
           ).length > 1
         )
           throw new BrowserControlInterrupted(
@@ -1750,7 +1808,7 @@ const make = Effect.gen(function* () {
         const found =
           reuse && request.tabId !== undefined
             ? await Effect.runPromise(
-                findTab(request.threadId, request.tabId).pipe(
+                findTab(request.threadId, request.tabId, request.projectId).pipe(
                   Effect.catchTags({
                     ServerBrowserTabNotFoundError: () => Effect.succeed(undefined),
                   }),
@@ -1759,7 +1817,10 @@ const make = Effect.gen(function* () {
             : undefined;
         if (reuse && request.tabIdExplicit && !found) {
           const { sessions } = await Effect.runPromise(
-            manager.list({ threadId: ThreadId.make(request.threadId) }),
+            manager.list({
+              threadId: ThreadId.make(request.threadId),
+              ...scopeOpenFields(request.projectId),
+            }),
           );
           const desktop = sessions.some(
             (session) => session.tabId === request.tabId && session.runtime !== "server",
@@ -1791,6 +1852,7 @@ const make = Effect.gen(function* () {
                 threadId: request.threadId,
                 ...(url ? { url } : {}),
                 ...(profileId === undefined ? {} : { profileId }),
+                ...scopeOpenFields(request.projectId, open.isolated),
                 runtime: "server",
                 reveal: false,
                 automationOwner: request.agentSessionId,
@@ -1840,7 +1902,7 @@ const make = Effect.gen(function* () {
           !request.tabIdExplicit &&
           [...tabs.values()].filter(
             (candidate) =>
-              candidate.threadId === request.threadId &&
+              tabSharesScope(candidate, request.threadId, request.projectId) &&
               candidate.control.agentId === request.agentSessionId,
           ).length > 1
         )
@@ -1850,12 +1912,13 @@ const make = Effect.gen(function* () {
           );
         const recordings = [...tabs.values()].filter(
           (candidate) =>
-            candidate.threadId === request.threadId &&
+            tabSharesScope(candidate, request.threadId, request.projectId) &&
             candidate.control.agentMayAct(request.agentSessionId ?? "") &&
             (candidate.recording || candidate.recordingStart),
         );
         const targetTabId =
-          request.tabId ?? latestThreadTab(request.threadId, request.agentSessionId)?.tabId;
+          request.tabId ??
+          latestThreadTab(request.threadId, request.agentSessionId, request.projectId)?.tabId;
         const tab =
           recordings.find((candidate) => candidate.tabId === targetTabId) ??
           (!request.tabIdExplicit && recordings.length === 1 ? recordings[0] : undefined);

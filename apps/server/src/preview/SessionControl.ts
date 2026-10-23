@@ -27,10 +27,18 @@ export class SessionControl {
   private owner: string | null = null;
   private epoch = 0;
   private closed = false;
+  private readonly exclusiveAgents: boolean;
+  private reservedAgent: string | null = null;
+  private reservedUntil = 0;
 
-  constructor(agentId: string | null, onGenerationChange: () => void = () => {}) {
+  constructor(
+    agentId: string | null,
+    onGenerationChange: () => void = () => {},
+    options?: { readonly exclusiveAgents?: boolean },
+  ) {
     this.agentId = agentId;
     this.onGenerationChange = onGenerationChange;
+    this.exclusiveAgents = options?.exclusiveAgents === true;
   }
 
   get controller() {
@@ -103,7 +111,33 @@ export class SessionControl {
       return Promise.reject(
         new BrowserControlInterrupted("A human controls this tab.", "humanControl"),
       );
-    return this.action(() => this.agentMayAct(agentId) && this.owner === null, run, deadlineMs);
+    if (this.exclusiveAgents) {
+      const now = performance.now();
+      if (
+        this.reservedAgent !== null &&
+        this.reservedAgent !== agentId &&
+        now < this.reservedUntil
+      ) {
+        return Promise.reject(
+          new BrowserControlInterrupted(
+            "Another agent is controlling this browser tab.",
+            "agentMismatch",
+          ),
+        );
+      }
+      this.reservedAgent = agentId;
+      this.reservedUntil = now + 5_000;
+    }
+    return this.action(
+      () => this.agentMayAct(agentId) && this.owner === null,
+      run,
+      deadlineMs,
+    ).then((result) => {
+      if (this.exclusiveAgents && this.reservedAgent === agentId) {
+        this.reservedUntil = performance.now() + 5_000;
+      }
+      return result;
+    });
   }
 
   agentCanActNow(agentId: string) {

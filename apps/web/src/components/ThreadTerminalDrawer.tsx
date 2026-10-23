@@ -1162,6 +1162,8 @@ interface ThreadTerminalDrawerProps {
   activeTerminalGroupId: string;
   focusRequestId: number;
   onSplitTerminal: () => void;
+  /** Off for a terminal shown from another chat: its layout belongs to the chat that owns it. */
+  layoutActions?: boolean;
   onSplitTerminalVertical: () => void;
   onNewTerminal: () => void;
   splitShortcutLabel?: string | undefined;
@@ -1429,6 +1431,7 @@ export default function ThreadTerminalDrawer({
   activeTerminalGroupId,
   focusRequestId,
   onSplitTerminal,
+  layoutActions = true,
   onSplitTerminalVertical,
   onNewTerminal,
   splitShortcutLabel,
@@ -1833,41 +1836,45 @@ export default function ThreadTerminalDrawer({
       {!hasTerminalSidebar && (
         <div className="pointer-events-none absolute right-2 top-2 z-20">
           <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border/80 bg-background shadow-xs">
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className={`p-1 text-foreground/90 transition-colors ${
-                hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
-              }`}
-              onClick={onSplitTerminalAction}
-              label={splitTerminalActionLabel}
-            >
-              <SquareSplitHorizontal className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className={`p-1 text-foreground/90 transition-colors ${
-                hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
-                  : "hover:bg-accent"
-              }`}
-              onClick={onSplitTerminalVerticalAction}
-              label={splitTerminalVerticalActionLabel}
-            >
-              <SquareSplitVertical className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
-            <TerminalActionButton
-              disabled={!canOperateTerminal}
-              className="p-1 text-foreground/90 transition-colors hover:bg-accent"
-              onClick={onNewTerminalAction}
-              label={newTerminalActionLabel}
-            >
-              <Plus className="size-3.25" />
-            </TerminalActionButton>
-            <div className="h-4 w-px bg-border/80" />
+            {layoutActions ? (
+              <>
+                <TerminalActionButton
+                  disabled={!canOperateTerminal}
+                  className={`p-1 text-foreground/90 transition-colors ${
+                    hasReachedSplitLimit
+                      ? "cursor-not-allowed opacity-64 hover:bg-transparent"
+                      : "hover:bg-accent"
+                  }`}
+                  onClick={onSplitTerminalAction}
+                  label={splitTerminalActionLabel}
+                >
+                  <SquareSplitHorizontal className="size-3.25" />
+                </TerminalActionButton>
+                <div className="h-4 w-px bg-border/80" />
+                <TerminalActionButton
+                  disabled={!canOperateTerminal}
+                  className={`p-1 text-foreground/90 transition-colors ${
+                    hasReachedSplitLimit
+                      ? "cursor-not-allowed opacity-64 hover:bg-transparent"
+                      : "hover:bg-accent"
+                  }`}
+                  onClick={onSplitTerminalVerticalAction}
+                  label={splitTerminalVerticalActionLabel}
+                >
+                  <SquareSplitVertical className="size-3.25" />
+                </TerminalActionButton>
+                <div className="h-4 w-px bg-border/80" />
+                <TerminalActionButton
+                  disabled={!canOperateTerminal}
+                  className="p-1 text-foreground/90 transition-colors hover:bg-accent"
+                  onClick={onNewTerminalAction}
+                  label={newTerminalActionLabel}
+                >
+                  <Plus className="size-3.25" />
+                </TerminalActionButton>
+                <div className="h-4 w-px bg-border/80" />
+              </>
+            ) : null}
             <TerminalActionButton
               disabled={!canOperateTerminal}
               className="p-1 text-foreground/90 transition-colors hover:bg-accent"

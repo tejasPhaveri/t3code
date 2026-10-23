@@ -132,6 +132,10 @@ export function resolveSidebarThreadSection(input: {
 
 const SIDEBAR_MARKER_PREFIX = "sidebar-marker-";
 
+const SIDEBAR_PROJECT_HEADER_PREFIX = "project-header:";
+
+export type SidebarProjectHeaderMarker = `${typeof SIDEBAR_PROJECT_HEADER_PREFIX}${string}`;
+
 export type SidebarListMarker =
   | "pinned-header"
   | "active-placeholder"
@@ -139,15 +143,105 @@ export type SidebarListMarker =
   | "pinned-divider"
   | "working-header"
   | "snoozed-header"
-  | "settled-header";
+  | "settled-header"
+  | SidebarProjectHeaderMarker;
 
 export function sidebarMarkerId(marker: SidebarListMarker): string {
   return `${SIDEBAR_MARKER_PREFIX}${marker}`;
 }
 
+export function sidebarProjectHeaderMarker(group: string): SidebarProjectHeaderMarker {
+  return `${SIDEBAR_PROJECT_HEADER_PREFIX}${group}`;
+}
+
+export function sidebarProjectHeaderGroup(marker: SidebarListMarker): string | null {
+  return marker.startsWith(SIDEBAR_PROJECT_HEADER_PREFIX)
+    ? marker.slice(SIDEBAR_PROJECT_HEADER_PREFIX.length)
+    : null;
+}
+
 export type SidebarListItem =
-  | { readonly kind: "thread"; readonly key: string; readonly section: SidebarSection }
+  | {
+      readonly kind: "thread";
+      readonly key: string;
+      readonly section: SidebarSection;
+      // The thread's project block. Set on every row, not only active ones,
+      // so a row dragged in from another shelf previews inside its block.
+      readonly group?: string;
+    }
   | { readonly kind: "marker"; readonly marker: SidebarListMarker };
+
+export interface SidebarProjectBlock<T> {
+  readonly group: string | undefined;
+  readonly rows: T[];
+}
+
+// Splits active rows into project blocks in `groupOrder`, keeping each row's
+// relative order. Rendering, drop targets, and the drag preview all go
+// through here so the order a drop writes is the order the preview showed.
+// A row whose group has no block yet (a thread entering the active section
+// with no active siblings) gets its own block in front of the block of the
+// next row it was placed above.
+export function arrangeSidebarProjectBlocks<T>(
+  groupOrder: readonly string[],
+  rows: readonly T[],
+  groupOf: (row: T) => string | undefined,
+): SidebarProjectBlock<T>[] {
+  const blocks = groupOrder.map((group): SidebarProjectBlock<T> => ({ group, rows: [] }));
+  const blockIndexByGroup = new Map(groupOrder.map((group, index) => [group, index]));
+  const extraBlocks = new Map<
+    string | undefined,
+    { slot: number; block: SidebarProjectBlock<T> }
+  >();
+  for (const [index, row] of rows.entries()) {
+    const group = groupOf(row);
+    const known = group === undefined ? undefined : blockIndexByGroup.get(group);
+    if (known !== undefined) {
+      blocks[known]!.rows.push(row);
+      continue;
+    }
+    let extra = extraBlocks.get(group);
+    if (extra === undefined) {
+      let slot = blocks.length;
+      for (const later of rows.slice(index + 1)) {
+        const laterGroup = groupOf(later);
+        const laterIndex = laterGroup === undefined ? undefined : blockIndexByGroup.get(laterGroup);
+        if (laterIndex !== undefined) {
+          slot = laterIndex;
+          break;
+        }
+      }
+      extra = { slot, block: { group, rows: [] } };
+      extraBlocks.set(group, extra);
+    }
+    extra.block.rows.push(row);
+  }
+  if (extraBlocks.size === 0) return blocks;
+  const arranged: SidebarProjectBlock<T>[] = [];
+  for (let slot = 0; slot <= blocks.length; slot += 1) {
+    for (const extra of extraBlocks.values()) {
+      if (extra.slot === slot) arranged.push(extra.block);
+    }
+    const block = blocks[slot];
+    if (block !== undefined) arranged.push(block);
+  }
+  return arranged;
+}
+
+// Groups follow `recency` (the newest thread's project first) while rows keep
+// their order in `threads`, so manual order keys only ever reorder rows inside
+// their own project and can never shuffle the groups.
+export function groupSidebarThreadsByProject<T>(input: {
+  readonly threads: readonly T[];
+  readonly recency: readonly T[];
+  readonly groupOf: (thread: T) => string;
+}): Array<{ readonly group: string; readonly threads: T[] }> {
+  const groupOrder = [...new Set(input.recency.map(input.groupOf))];
+  return arrangeSidebarProjectBlocks(groupOrder, input.threads, input.groupOf).map((block) => ({
+    group: block.group!,
+    threads: block.rows,
+  }));
+}
 
 export function sidebarListItemId(item: SidebarListItem): string {
   return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
@@ -185,11 +279,14 @@ export function resolveSidebarDropTarget(
   const section = sectionAtSidebarSlot(moved, overIndex);
   if (section === "working" || section === "snoozed") return null;
   const pinnedOrder: string[] = [];
-  const activeOrder: string[] = [];
+  const activeRows: Extract<SidebarListItem, { kind: "thread" }>[] = [];
+  const headerGroups: string[] = [];
   let currentSection: SidebarSection = "pinned";
   for (const item of moved) {
     if (item.kind === "marker") {
-      if (item.marker === "pinned-divider") currentSection = "active";
+      const headerGroup = sidebarProjectHeaderGroup(item.marker);
+      if (headerGroup !== null) headerGroups.push(headerGroup);
+      else if (item.marker === "pinned-divider") currentSection = "active";
       else if (
         item.marker === "working-header" ||
         item.marker === "snoozed-header" ||
@@ -197,8 +294,13 @@ export function resolveSidebarDropTarget(
       )
         break;
     } else if (currentSection === "pinned") pinnedOrder.push(item.key);
-    else activeOrder.push(item.key);
+    else activeRows.push(item);
   }
+  // Hovering a row into another project's block still keeps it in its own
+  // block: the active order a drop writes must match the grouped screen.
+  const activeOrder = arrangeSidebarProjectBlocks(headerGroups, activeRows, (row) => row.group)
+    .flatMap((block) => block.rows)
+    .map((row) => row.key);
   return { section, pinnedOrder, activeOrder };
 }
 

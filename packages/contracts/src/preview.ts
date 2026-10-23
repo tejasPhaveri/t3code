@@ -1,5 +1,12 @@
 import { Schema } from "effect";
-import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  NonNegativeInt,
+  PositiveInt,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
+import { BrowserPersistence } from "./browserPersistence.ts";
 import { BROWSER_PROFILE_MAX_COUNT, BrowserProfile, BrowserProfileId } from "./browserProfile.ts";
 
 export const PREVIEW_URL_MAX_LENGTH = 2_048;
@@ -174,6 +181,19 @@ export const PreviewSessionSnapshot = Schema.Struct({
    * switching would require tearing the guest down and losing page state.
    */
   profileId: Schema.optional(BrowserProfileId),
+  /**
+   * Project the tab belongs to when browser persistence is per project.
+   * Fixed at open, like the profile: chats reference this tab, they do not copy it.
+   */
+  projectId: Schema.optional(ProjectId),
+  persistence: Schema.optional(BrowserPersistence),
+  /** Stays on the chat that opened it even when persistence is wider. */
+  isolated: Schema.optional(Schema.Boolean),
+  /**
+   * Restored from a previous run: the desktop defers creating the page until the tab is
+   * first shown, so reopening a project with many tabs does not load them all at once.
+   */
+  lazy: Schema.optional(Schema.Boolean),
   runtime: Schema.optional(PreviewRuntime),
   automationOwner: Schema.optional(Schema.String),
   reveal: Schema.optional(Schema.Boolean),
@@ -187,6 +207,12 @@ export const PreviewOpenInput = Schema.Struct({
   url: Schema.optional(Url),
   viewport: Schema.optional(PreviewViewportSetting),
   profileId: Schema.optional(BrowserProfileId),
+  projectId: Schema.optional(ProjectId),
+  persistence: Schema.optional(BrowserPersistence),
+  isolated: Schema.optional(Schema.Boolean),
+  /** Title shown until a lazy tab loads. */
+  title: Schema.optional(Title),
+  lazy: Schema.optional(Schema.Boolean),
   runtime: Schema.optional(PreviewRuntime),
   reveal: Schema.optional(Schema.Boolean),
 });
@@ -244,6 +270,7 @@ export type PreviewCloseInput = typeof PreviewCloseInput.Type;
 export const PreviewReportProfilesInput = Schema.Struct({
   profiles: Schema.Array(BrowserProfile).check(Schema.isMaxLength(BROWSER_PROFILE_MAX_COUNT)),
   defaultProfileId: BrowserProfileId,
+  persistence: Schema.optional(BrowserPersistence),
 });
 export type PreviewReportProfilesInput = typeof PreviewReportProfilesInput.Type;
 
@@ -254,6 +281,12 @@ export type PreviewClearProfileInput = typeof PreviewClearProfileInput.Type;
 
 export const PreviewListInput = Schema.Struct({
   threadId: ThreadId,
+  /**
+   * Present when the caller wants tabs shared past this chat. Omitted calls
+   * stay chat-scoped so a client syncing one thread does not copy sessions.
+   */
+  projectId: Schema.optional(ProjectId),
+  persistence: Schema.optional(BrowserPersistence),
 });
 export type PreviewListInput = typeof PreviewListInput.Type;
 

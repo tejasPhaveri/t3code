@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { type PreviewEvent, ThreadId } from "@t3tools/contracts";
+import { type PreviewEvent, ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
@@ -64,6 +64,27 @@ it.layer(layer)("PreviewManager", (it) => {
       if (events[0]?.type === "opened") {
         expect(events[0].tabId).toBe(snapshot.tabId);
       }
+    }),
+  );
+
+  it.effect("opens a restored lazy tab at its saved page without claiming to load", () =>
+    Effect.gen(function* () {
+      const threadId = freshThreadId();
+      const manager = yield* PreviewManager.PreviewManager;
+
+      const snapshot = yield* manager.open({
+        threadId,
+        url: "https://staging.example.com/admin?role=owner",
+        title: "Admin",
+        lazy: true,
+      });
+
+      expect(snapshot.lazy).toBe(true);
+      expect(snapshot.navStatus).toEqual({
+        _tag: "Success",
+        url: "https://staging.example.com/admin?role=owner",
+        title: "Admin",
+      });
     }),
   );
 
@@ -255,6 +276,61 @@ it.layer(layer)("PreviewManager", (it) => {
       expect(events[1]!.revision).toBeGreaterThan(events[0]!.revision);
       expect(listed.revision).toBe(events[1]!.revision);
       expect(listed.sessions).toHaveLength(0);
+    }),
+  );
+
+  it.effect("lists a project's tabs to another chat and keeps an isolated tab private", () =>
+    Effect.gen(function* () {
+      const owner = freshThreadId();
+      const sibling = freshThreadId();
+      const otherProject = freshThreadId();
+      const manager = yield* PreviewManager.PreviewManager;
+      const shared = yield* manager.open({
+        threadId: owner,
+        url: "http://localhost:5173",
+        projectId: ProjectId.make("project-1"),
+        persistence: "project",
+      });
+      const isolated = yield* manager.open({
+        threadId: owner,
+        url: "http://localhost:3000",
+        projectId: ProjectId.make("project-1"),
+        persistence: "project",
+        isolated: true,
+      });
+
+      const siblingList = yield* manager.list({
+        threadId: sibling,
+        projectId: ProjectId.make("project-1"),
+        persistence: "project",
+      });
+      expect(siblingList.sessions.map((session) => session.tabId)).toEqual([shared.tabId]);
+
+      const ownerList = yield* manager.list({
+        threadId: owner,
+        projectId: ProjectId.make("project-1"),
+        persistence: "project",
+      });
+      expect(ownerList.sessions.map((session) => session.tabId).toSorted()).toEqual(
+        [shared.tabId, isolated.tabId].toSorted(),
+      );
+
+      const elsewhere = yield* manager.list({
+        threadId: otherProject,
+        projectId: ProjectId.make("project-2"),
+        persistence: "project",
+      });
+      expect(elsewhere.sessions).toEqual([]);
+
+      const environment = yield* manager.list({
+        threadId: sibling,
+        persistence: "environment",
+      });
+      // The manager layer is shared with earlier tests, so environment scope
+      // also includes their non-isolated tabs. This test only owns these two.
+      const environmentIds = environment.sessions.map((session) => session.tabId);
+      expect(environmentIds).toContain(shared.tabId);
+      expect(environmentIds).not.toContain(isolated.tabId);
     }),
   );
 

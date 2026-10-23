@@ -30,6 +30,10 @@ T3 Code has 3 key app surfaces: **web**, **desktop**, and **mobile**.
 
 **Mobile** is a React Native app for both iOS and Android, available on the App Store and Google Play. The mobile app allows for connecting to any T3 Code server to control work remotely.
 
+## This fork
+
+This checkout is a personal fork. Its packaged app is installed at `/Applications/T3 Code.app`, isolated from `T3 Code (Nightly)` with its own data in `~/.t3-fork`. To rebuild or reinstall it, or to debug "dev keeps opening" or "app won't open", read [Fork Mac app](docs/operations/fork-mac-app.md) first. Never leave a desktop dev watcher running. Never point the fork at `~/.t3/userdata`.
+
 ## A note from Theo
 
 I like ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising.

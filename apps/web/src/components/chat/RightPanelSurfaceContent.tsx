@@ -8,7 +8,8 @@ import type {
   ThreadLinkedPullRequest,
   ThreadPullRequestLink,
 } from "@t3tools/contracts";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { lazy, Suspense } from "react";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
 import type { ShortcutMatchContext } from "../../keybindings";
@@ -27,6 +28,9 @@ const PreviewPanel = lazy(() =>
   import("../preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
 );
 const DiffPanel = lazy(() => import("../DiffPanel"));
+const GitGraphPanel = lazy(() =>
+  import("../gitGraph/GitGraphPanel").then((module) => ({ default: module.GitGraphPanel })),
+);
 const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
@@ -77,6 +81,7 @@ export function RightPanelSurfaceContent(props: {
   readonly terminal: RightPanelTerminalProps;
   readonly pullRequest: RightPanelPullRequestProps;
   readonly files: RightPanelFileProps;
+  readonly gitGraph: { readonly cwd: string | null; readonly projectId: string | null };
 }) {
   const { surface, threadRef, visible } = props;
   if (surface === null) return null;
@@ -99,9 +104,25 @@ export function RightPanelSurfaceContent(props: {
         <PersistentThreadTerminalPanel
           {...props.terminal}
           visible={visible}
-          threadRef={threadRef}
+          threadRef={
+            surface.ownerThreadId === undefined
+              ? threadRef
+              : scopeThreadRef(threadRef.environmentId, ThreadId.make(surface.ownerThreadId))
+          }
           surface={surface}
         />
+      );
+    case "git-graph":
+      return (
+        <Suspense fallback={null}>
+          <GitGraphPanel
+            environmentId={props.environmentId}
+            threadRef={threadRef}
+            cwd={props.gitGraph.cwd}
+            projectId={props.gitGraph.projectId}
+            visible={visible}
+          />
+        </Suspense>
       );
     case "diff":
       return (

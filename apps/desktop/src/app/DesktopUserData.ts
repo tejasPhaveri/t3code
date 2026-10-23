@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
@@ -34,9 +35,14 @@ export class DesktopUserDataInitializationError extends Schema.TaggedError<Deskt
 export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPath")(
   function* (input: {
     readonly appDataDirectory: string;
+    readonly userDataDirectoryOverride?: Option.Option<string>;
     readonly isDevelopment: boolean;
     readonly platform: NodeJS.Platform;
   }) {
+    // Lets a side-by-side install (e.g. a fork) keep its own Chromium profile and instance lock.
+    if (input.userDataDirectoryOverride && Option.isSome(input.userDataDirectoryOverride)) {
+      return input.userDataDirectoryOverride.value;
+    }
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const names = input.isDevelopment

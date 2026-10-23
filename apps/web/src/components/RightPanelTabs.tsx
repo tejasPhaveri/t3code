@@ -1,4 +1,8 @@
-import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
+import {
+  DEFAULT_BROWSER_PROFILE_ID,
+  pullRequestHostOf,
+  type SourceControlProviderKind,
+} from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
 import {
@@ -35,6 +39,7 @@ import {
   Globe2,
   Plus,
   TerminalSquare,
+  GitGraph,
 } from "lucide-react";
 import { Volume2, VolumeOff } from "lucide";
 import {
@@ -64,6 +69,7 @@ import {
   Menu,
   MenuItem,
   MenuPopup,
+  MenuSeparator,
   MenuShortcut,
   MenuSub,
   MenuSubPopup,
@@ -131,12 +137,21 @@ export interface RightPanelTabsProps {
    * accept the MouseEvent as a profile id.
    */
   onAddBrowserInProfile: (profileId: string) => void;
+  /** Opens the project's configured tabs that are not open yet. */
+  onOpenProjectTabs?: (() => void) | undefined;
+  projectTabCount?: number | undefined;
+  onSetUpProjectTabs?: (() => void) | undefined;
+  /** Opens a tab that stays in this chat when browser tabs are otherwise shared. */
+  onAddIsolatedBrowser?: () => void;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddDevice: () => void;
+  /** Opens the project's Git Graph, shown in every chat of the project. */
+  onAddGitGraph?: (() => void) | undefined;
+  gitGraphAvailable?: boolean | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -170,6 +185,7 @@ const SURFACE_DISABLED_REASONS = {
   pullRequest: "This thread's branch has no pull request yet.",
   pullRequests: "No linked pull requests are available for this thread.",
   device: "Devices are only available from a thread.",
+  gitGraph: "Git Graph is only available for Git repositories.",
 } as const;
 
 // Closed keepMounted popups must stop blocking shortcuts once their exit transition ends.
@@ -194,12 +210,14 @@ const SURFACE_UNAVAILABLE_HINTS = {
   pullRequest: "No pull request on this branch yet.",
   pullRequests: "No linked pull requests available.",
   device: "Available from a thread.",
+  gitGraph: "Available for Git repositories.",
 } as const;
 
 type TabContextMenuAction =
   | "rename"
   | "copy-path"
   | "toggle-mute"
+  | "isolate"
   | "close"
   | "close-others"
   | "close-to-right"
@@ -308,13 +326,21 @@ function SurfaceMenuItem(props: {
 function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
   onAddBrowserInProfile: (profileId: string) => void;
+  /** Opens the project's configured tabs that are not open yet. */
+  onOpenProjectTabs?: (() => void) | undefined;
+  projectTabCount?: number | undefined;
+  onSetUpProjectTabs?: (() => void) | undefined;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+  browserProfileAccents: Readonly<Record<string, string>>;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddDevice: () => void;
+  /** Opens the project's Git Graph, shown in every chat of the project. */
+  onAddGitGraph?: (() => void) | undefined;
+  gitGraphAvailable?: boolean | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -357,6 +383,14 @@ function RightPanelEmptyState(props: {
       available: props.diffAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
       onClick: props.onAddDiff,
+    },
+    {
+      label: "Git Graph",
+      icon: GitGraph,
+      shortcut: "G",
+      available: props.gitGraphAvailable === true && props.onAddGitGraph !== undefined,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.gitGraph,
+      onClick: props.onAddGitGraph ?? (() => undefined),
     },
     {
       label: "Pull request",
@@ -511,9 +545,27 @@ function RightPanelEmptyState(props: {
                           key={profile.id}
                           onClick={() => props.onAddBrowserInProfile(profile.id)}
                         >
+                          <span
+                            aria-hidden
+                            className="size-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: props.browserProfileAccents[profile.id] }}
+                          />
                           <span className="min-w-0 truncate">{profile.name}</span>
                         </MenuItem>
                       ))}
+                      {props.onSetUpProjectTabs ? (
+                        <>
+                          <MenuSeparator />
+                          {props.onOpenProjectTabs && (props.projectTabCount ?? 0) > 0 ? (
+                            <MenuItem onClick={props.onOpenProjectTabs}>
+                              Open project tabs ({props.projectTabCount})
+                            </MenuItem>
+                          ) : null}
+                          <MenuItem onClick={props.onSetUpProjectTabs}>
+                            Set up project tabs…
+                          </MenuItem>
+                        </>
+                      ) : null}
                     </MenuPopup>
                   </Menu>
                 ) : null}
@@ -546,6 +598,7 @@ function surfaceTitle(
   surface: RightPanelSurface,
   sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
   terminalLabelsById: ReadonlyMap<string, string>,
+  profileNamesById: ReadonlyMap<string, string>,
 ): string {
   switch (surface.kind) {
     case "diff":
@@ -558,23 +611,34 @@ function surfaceTitle(
       );
     case "terminal":
       return (
-        terminalLabelsById.get(surface.activeTerminalId) ??
-        getTerminalLabel(surface.activeTerminalId)
+        terminalLabelsById.get(
+          surface.ownerThreadId === undefined
+            ? surface.activeTerminalId
+            : `${surface.ownerThreadId}:${surface.activeTerminalId}`,
+        ) ?? getTerminalLabel(surface.activeTerminalId)
       );
     case "pull-request":
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
+    case "git-graph":
+      return "Git Graph";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
-      if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
-      if (snapshot.navStatus.title.trim().length > 0) return snapshot.navStatus.title;
+      // Role testing opens one site in many profiles; the profile tells those tabs apart.
+      const profileName =
+        snapshot?.profileId === undefined || snapshot.profileId === DEFAULT_BROWSER_PROFILE_ID
+          ? undefined
+          : profileNamesById.get(snapshot.profileId);
+      const withProfile = (label: string) => (profileName ? `${profileName} · ${label}` : label);
+      if (!snapshot || snapshot.navStatus._tag === "Idle") return withProfile("Browser");
+      if (snapshot.navStatus.title.trim().length > 0) return withProfile(snapshot.navStatus.title);
       try {
-        return new URL(snapshot.navStatus.url).host || "Browser";
+        return withProfile(new URL(snapshot.navStatus.url).host || "Browser");
       } catch {
-        return "Browser";
+        return withProfile("Browser");
       }
     }
   }
@@ -645,6 +709,8 @@ function SurfaceIcon({
       );
     case "terminal":
       return <TerminalSquare className="size-3 shrink-0" />;
+    case "git-graph":
+      return <GitGraph className="size-3 shrink-0" />;
     case "pull-request":
       return (
         <PullRequestSurfaceIcon
@@ -826,6 +892,7 @@ function RightPanelTab(
     renaming: boolean;
     canRename: boolean;
     ownsDesktopTitleBar: boolean;
+    accentColor?: string;
   },
 ) {
   const {
@@ -943,7 +1010,15 @@ function RightPanelTab(
       onContextMenu={(event) => onContextMenu(event, surface)}
       {...listeners}
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+        ...(props.accentColor === undefined
+          ? {}
+          : {
+              backgroundColor: `color-mix(in srgb, ${props.accentColor} ${props.active ? 32 : 14}%, transparent)`,
+            }),
+      }}
       className={cn(
         "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
@@ -960,7 +1035,8 @@ function RightPanelTab(
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
-  const browserProfiles = useBrowserDefaults().profiles;
+  const { profiles: browserProfiles, profileAccents } = useBrowserDefaults();
+  const profileNamesById = new Map(browserProfiles.map((profile) => [profile.id, profile.name]));
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);
   const addSurfaceTriggerRef = useRef<HTMLButtonElement>(null);
@@ -1061,6 +1137,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddDiff,
     },
     {
+      label: "Git Graph",
+      icon: GitGraph,
+      shortcut: "G",
+      available: props.gitGraphAvailable === true && props.onAddGitGraph !== undefined,
+      disabledReason: SURFACE_DISABLED_REASONS.gitGraph,
+      onClick: props.onAddGitGraph ?? (() => undefined),
+    },
+    {
       label: "Pull request",
       icon: PullRequestGlyph.pullRequest,
       shortcut: "P",
@@ -1114,6 +1198,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     const menuPreviewTabId = previewTabIdOf(surface, props.previewSessions);
     const menuOverlay = menuPreviewTabId ? (props.desktopByTabId[menuPreviewTabId] ?? null) : null;
     const menuMuted = menuOverlay?.audioMuted ?? false;
+    if (surface.kind === "preview" && props.onAddIsolatedBrowser) {
+      items.push({ id: "isolate", label: "New isolated tab" });
+    }
     if (surface.kind === "preview") {
       items.push({
         id: "toggle-mute",
@@ -1151,6 +1238,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         if (surface.kind === "file" && surface.attachment === undefined) {
           props.onCopyFilePath(surface.relativePath);
         }
+        break;
+      case "isolate":
+        props.onAddIsolatedBrowser?.();
         break;
       case "toggle-mute": {
         const runtimeTabId =
@@ -1277,6 +1367,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             <SortableTabList surfaces={props.surfaces} onMove={props.onMoveSurface}>
               {props.surfaces.map((surface) => {
                 const previewTabId = previewTabIdOf(surface, props.previewSessions);
+                const previewProfileId = previewTabId
+                  ? props.previewSessions[previewTabId]?.profileId
+                  : undefined;
+                const accentColor =
+                  surface.kind === "preview"
+                    ? (profileAccents[previewProfileId ?? DEFAULT_BROWSER_PROFILE_ID] ??
+                      profileAccents[DEFAULT_BROWSER_PROFILE_ID])
+                    : undefined;
                 const favicon = previewFaviconOf(
                   surface,
                   props.previewSessions,
@@ -1289,7 +1387,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     dragDisabled={!props.onMoveSurface || renamingDevice === surface.id}
                     active={surface.id === props.activeSurfaceId}
                     pending={props.pendingSurfaceIds.has(surface.id)}
-                    title={surfaceTitle(surface, props.previewSessions, props.terminalLabelsById)}
+                    title={surfaceTitle(
+                      surface,
+                      props.previewSessions,
+                      props.terminalLabelsById,
+                      profileNamesById,
+                    )}
                     audio={tabAudioState(
                       previewTabId ? (props.desktopByTabId[previewTabId] ?? null) : null,
                     )}
@@ -1304,6 +1407,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     renaming={renamingDevice === surface.id}
                     canRename={props.onRenameDevice !== undefined}
                     ownsDesktopTitleBar={ownsDesktopTitleBar}
+                    {...(accentColor === undefined ? {} : { accentColor })}
                     onActivate={onActivateTab}
                     onClose={onCloseTab}
                     onAuxClick={onTabAuxClick}
@@ -1365,9 +1469,27 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                                 key={profile.id}
                                 onClick={() => props.onAddBrowserInProfile(profile.id)}
                               >
+                                <span
+                                  aria-hidden
+                                  className="size-2 shrink-0 rounded-full"
+                                  style={{ backgroundColor: profileAccents[profile.id] }}
+                                />
                                 <span className="min-w-0 truncate">{profile.name}</span>
                               </MenuItem>
                             ))}
+                            {props.onSetUpProjectTabs ? (
+                              <>
+                                <MenuSeparator />
+                                {props.onOpenProjectTabs && (props.projectTabCount ?? 0) > 0 ? (
+                                  <MenuItem onClick={props.onOpenProjectTabs}>
+                                    Open project tabs ({props.projectTabCount})
+                                  </MenuItem>
+                                ) : null}
+                                <MenuItem onClick={props.onSetUpProjectTabs}>
+                                  Set up project tabs…
+                                </MenuItem>
+                              </>
+                            ) : null}
                           </MenuSubPopup>
                         </MenuSub>
                       );
@@ -1450,7 +1572,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
             onAddBrowserInProfile={props.onAddBrowserInProfile}
+            onOpenProjectTabs={props.onOpenProjectTabs}
+            projectTabCount={props.projectTabCount}
+            onSetUpProjectTabs={props.onSetUpProjectTabs}
             browserProfiles={browserProfiles}
+            browserProfileAccents={profileAccents}
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
@@ -1464,6 +1590,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             pullRequestAvailable={props.pullRequestAvailable}
             pullRequestsAvailable={props.pullRequestsAvailable}
             deviceAvailable={props.deviceAvailable}
+            onAddGitGraph={props.onAddGitGraph}
+            gitGraphAvailable={props.gitGraphAvailable}
           />
         ) : (
           props.children

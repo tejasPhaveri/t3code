@@ -13,11 +13,13 @@ export async function addBrowserSurface<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly openPreview: OpenPreviewMutation<E>;
   readonly profileId?: string | undefined;
+  readonly isolated?: boolean | undefined;
 }): Promise<AtomCommandResult<void, E | BrowserSettingsReadError>> {
   const result = await openPreviewSession({
     openPreview: input.openPreview,
     threadRef: input.threadRef,
     ...(input.profileId === undefined ? {} : { profileId: input.profileId }),
+    ...(input.isolated ? { isolated: true } : {}),
   });
   return mapAtomCommandResult(result, (snapshot) => {
     useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);

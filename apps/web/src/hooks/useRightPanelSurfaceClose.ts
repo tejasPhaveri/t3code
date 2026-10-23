@@ -1,15 +1,24 @@
 import {
   AuthPreviewOperateScope,
   AuthTerminalOperateScope,
+  ProjectId,
   type ScopedThreadRef,
+  ThreadId,
 } from "@t3tools/contracts";
+import { scopeProjectRef, scopedProjectKey } from "@t3tools/client-runtime/environment";
+import { locatePreviewSession, readThreadProjectId } from "../browser/browserScope";
+import { useGitGraphProjectStore } from "../components/gitGraph/gitGraphProjectStore";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { agentControlledBrowserCloseConfirmation } from "../components/ChatView.logic";
 import { closePreviewSession } from "../components/preview/closePreviewSession";
 import { useThreadTerminalActions } from "../components/terminal/useThreadTerminalActions";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
 import { readLocalApi } from "../localApi";
-import { setActivePreviewTab, useThreadPreviewState } from "../previewStateStore";
+import {
+  setActivePreviewTab,
+  useActivePreviewSessions,
+  useThreadPreviewState,
+} from "../previewStateStore";
 import {
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
@@ -38,6 +47,7 @@ export function useRightPanelSurfaceClose(input: {
     AuthPreviewOperateScope,
   );
   const previewState = useThreadPreviewState(threadRef);
+  const previewByThreadKey = useActivePreviewSessions();
   const terminalActions = useThreadTerminalActions(threadRef);
   const storeCloseTerminal = useTerminalUiStateStore((state) => state.closeTerminal);
   const surfaces = useRightPanelStore(
@@ -49,20 +59,44 @@ export function useRightPanelSurfaceClose(input: {
     // server record is in-memory bookkeeping, not a live view, and stays
     // listed until a client with the scope closes it or the server restarts.
     if (canOperatePreview && surface.kind === "preview" && surface.resourceId) {
+      const located = locatePreviewSession(
+        previewByThreadKey,
+        ref.environmentId,
+        surface.resourceId,
+      );
+      const owner = located?.owner ?? ref;
       void closePreviewSession({
         closePreview,
-        snapshot: previewState.sessions[surface.resourceId] ?? null,
+        snapshot: located?.snapshot ?? previewState.sessions[surface.resourceId] ?? null,
         tabId: surface.resourceId,
-        threadRef: ref,
+        threadRef: owner,
       });
+      if (owner.threadId !== ref.threadId) {
+        useRightPanelStore.getState().closeSurface(owner, surface.id);
+      }
     }
     if (
       surface.kind === "terminal" &&
       readEnvironmentScope(ref.environmentId, AuthTerminalOperateScope)
     ) {
       for (const terminalId of surface.terminalIds) {
-        storeCloseTerminal(ref, terminalId);
-        terminalActions.closeTerminalSession(terminalId);
+        // A shared terminal belongs to another chat; this chat's own ids may repeat it.
+        if (surface.ownerThreadId === undefined) {
+          storeCloseTerminal(ref, terminalId);
+          terminalActions.closeTerminalSession(terminalId);
+        } else {
+          terminalActions.closeTerminalSession(terminalId, ThreadId.make(surface.ownerThreadId));
+        }
+      }
+    }
+    if (surface.kind === "git-graph") {
+      const projectId = readThreadProjectId(ref);
+      if (projectId !== undefined) {
+        useGitGraphProjectStore
+          .getState()
+          .update(scopedProjectKey(scopeProjectRef(ref.environmentId, ProjectId.make(projectId))), {
+            open: false,
+          });
       }
     }
   };

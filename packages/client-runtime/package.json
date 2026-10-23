@@ -442,6 +442,14 @@
     "./model-traits": {
       "types": "./src/modelTraits.ts",
       "default": "./src/modelTraits.ts"
+    },
+    "./git-graph/layout": {
+      "types": "./src/gitGraph/layout.ts",
+      "default": "./src/gitGraph/layout.ts"
+    },
+    "./state/git-graph": {
+      "types": "./src/state/gitGraph.ts",
+      "default": "./src/state/gitGraph.ts"
     }
   },
   "scripts": {

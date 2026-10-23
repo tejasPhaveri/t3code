@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import { EnvironmentId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { EnvironmentId, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   PREVIEW_VIEWPORT_MAX_AREA,
   PreviewRenderedViewportSize,
@@ -183,6 +183,12 @@ export const PreviewAutomationOpenInput = Schema.Struct({
       description: PROFILE_GUIDANCE,
     }),
   ).annotate({ description: PROFILE_GUIDANCE }),
+  isolated: Schema.optional(
+    Schema.Boolean.annotate({
+      description:
+        "Keep this tab in the current chat only, even when browser persistence is per project or per environment.",
+    }),
+  ),
 })
   .check(
     Schema.makeFilter(
@@ -795,6 +801,8 @@ export const PreviewAutomationRequest = Schema.Struct({
   tabIdExplicit: Schema.optional(Schema.Boolean),
   /** Supplied by the broker from authenticated scope, never from tool input. */
   agentSessionId: Schema.optional(Schema.String),
+  /** Project of the calling chat, so a shared browser can be found across chats. */
+  projectId: Schema.optional(ProjectId),
   operation: PreviewAutomationOperation,
   input: Schema.Unknown,
   timeoutMs: Schema.Int.check(Schema.isGreaterThan(0)),

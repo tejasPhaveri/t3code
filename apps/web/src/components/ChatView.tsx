@@ -42,6 +42,7 @@ import {
   latestRootProviderFailure,
 } from "@t3tools/shared/orchestrationV2ThreadError";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
+import { type BrowserProjectSetup, previewSessionVisibleTo } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
@@ -93,6 +94,7 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import {
   parseScopedThreadKey,
+  scopedProjectKey,
   scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
@@ -151,7 +153,27 @@ import {
   selectThreadRightPanelState,
   useRightPanelStore,
 } from "../rightPanelStore";
-import { isPreviewSupportedInRuntime, useThreadPreviewState } from "../previewStateStore";
+import {
+  isPreviewSupportedInRuntime,
+  useActivePreviewSessions,
+  useThreadPreviewState,
+} from "../previewStateStore";
+import {
+  browserRestoreScopeKey,
+  locatePreviewSession,
+  sharedPreviewIndex,
+  useProjectIdByThreadKey,
+} from "../browser/browserScope";
+import { BrowserPersistenceTitlebarControl } from "../browser/BrowserPersistenceTitlebarControl";
+import { useGitGraphProjectState, useGitGraphProjectStore } from "./gitGraph/gitGraphProjectStore";
+import {
+  browserProjectSetupKey,
+  openMissingBrowserTabs,
+  useRestoreBrowserScope,
+} from "../browser/BrowserSessionRestorer";
+import { useBrowserDefaults } from "../browser/browserDefaults";
+import { previewEnvironment } from "../state/preview";
+import { ProjectTabsDialog } from "./preview/ProjectTabsDialog";
 import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { usePreviewSession } from "./preview/usePreviewSession";
@@ -184,6 +206,8 @@ import {
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import {
+  getClientSettings,
+  updateClientSettings,
   useClientSettings,
   useClientSettingsHydrated,
   useEnvironmentSettings,
@@ -242,6 +266,7 @@ import {
   useThreadHistory,
   useQuietThreadShell,
   useThreadCheckpointSummaries,
+  useThreadShells,
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -935,9 +960,75 @@ export default function ChatView(props: ChatViewProps) {
   );
   const activePreviewState = useThreadPreviewState(activeThreadRef);
   const activePreviewServerEpoch = activePreviewState.serverEpoch;
+  const previewByThreadKey = useActivePreviewSessions();
+  const browserPersistence = useClientSettings((settings) => settings.browserPersistence);
+  const projectIdByThreadKey = useProjectIdByThreadKey();
+  const threadShells = useThreadShells();
   const previewSessionsReady = !activeEnvironmentServerBrowser || activePreviewState.listLoaded;
+  const sharedPreview = sharedPreviewIndex({
+    persistence: browserPersistence,
+    environmentId: activeThreadRef?.environmentId ?? "",
+    threadId: activeThreadRef?.threadId ?? "",
+    // `activeThread` covers drafts: a new chat has no server shell until its first message.
+    projectId: activeThread?.projectId,
+    byThreadKey: previewByThreadKey,
+    projectIdByThreadKey,
+  });
+  const sharedPreviewTabKey = sharedPreview.tabIds.join("\0");
+  // Terminals other chats in scope own, shown here by reference like their browser tabs.
+  const environmentTerminalSessions = useKnownTerminalSessions({
+    environmentId: activeThreadRef?.environmentId ?? null,
+    threadId: null,
+  });
+  const threadTitleById = new Map(threadShells.map((shell) => [shell.id, shell.title] as const));
+  const sharedTerminalSessions = (environmentTerminalSessions ?? []).filter((session) => {
+    if (!activeThreadRef || session.target.threadId === activeThreadRef.threadId) return false;
+    const ownerProjectId = projectIdByThreadKey.get(
+      scopedThreadKey(scopeThreadRef(activeThreadRef.environmentId, session.target.threadId)),
+    );
+    return previewSessionVisibleTo(
+      {
+        threadId: session.target.threadId,
+        ...(ownerProjectId === undefined ? {} : { projectId: ownerProjectId }),
+      },
+      {
+        threadId: activeThreadRef.threadId,
+        ...(activeThread?.projectId === undefined ? {} : { projectId: activeThread.projectId }),
+        persistence: browserPersistence,
+      },
+    );
+  });
+  const terminalSessionsKnown = environmentTerminalSessions !== null;
+  const sharedTerminalKey = sharedTerminalSessions
+    .map((session) => `${session.target.threadId}\0${session.target.terminalId}`)
+    .join("\n");
+  const panelTerminalLabelsById = new Map(activeTerminalLabelsById);
+  for (const session of sharedTerminalSessions) {
+    const ownerTitle = threadTitleById.get(session.target.threadId);
+    const label = resolveTerminalSessionLabel(session.target.terminalId, session.state.summary);
+    panelTerminalLabelsById.set(
+      `${session.target.threadId}:${session.target.terminalId}`,
+      ownerTitle ? `${label} · ${ownerTitle}` : label,
+    );
+  }
+  const panelPreviewSessions = { ...sharedPreview.sessions, ...activePreviewState.sessions };
+  const panelDesktopByTabId = {
+    ...sharedPreview.desktopByTabId,
+    ...activePreviewState.desktopByTabId,
+  };
   const resolvePreviewRuntimeTabId = activeThreadRef
-    ? (tabId: string) => previewRuntimeTabId(activeThreadRef, activePreviewServerEpoch, tabId)
+    ? (tabId: string) => {
+        const located = locatePreviewSession(
+          previewByThreadKey,
+          activeThreadRef.environmentId,
+          tabId,
+        );
+        return previewRuntimeTabId(
+          located?.owner ?? activeThreadRef,
+          located?.serverEpoch ?? activePreviewServerEpoch,
+          tabId,
+        );
+      }
     : undefined;
   const activePreviewMiniPlayer = usePreviewMiniPlayerStore((state) =>
     selectThreadPreviewMiniPlayer(state.byThreadKey, activeThreadRef),
@@ -998,10 +1089,30 @@ export default function ChatView(props: ChatViewProps) {
       .getState()
       .reconcileBrowserSurfaces(
         activeThreadRef,
-        Object.keys(activePreviewState.sessions),
+        [
+          ...new Set([
+            ...Object.keys(activePreviewState.sessions),
+            ...sharedPreviewTabKey.split("\0").filter((tabId) => tabId.length > 0),
+          ]),
+        ],
         hiddenTabIds,
       );
-  }, [activePreviewState.sessions, activeThreadRef, previewSessionsReady]);
+  }, [activePreviewState.sessions, activeThreadRef, previewSessionsReady, sharedPreviewTabKey]);
+
+  useEffect(() => {
+    // Unknown (not yet loaded or unreadable) must not read as "no shared terminals".
+    if (!activeThreadRef || !terminalSessionsKnown) return;
+    useRightPanelStore.getState().reconcileSharedTerminalSurfaces(
+      activeThreadRef,
+      sharedTerminalKey
+        .split("\n")
+        .filter((entry) => entry.length > 0)
+        .map((entry) => {
+          const [ownerThreadId = "", terminalId = ""] = entry.split("\0");
+          return { ownerThreadId, terminalId };
+        }),
+    );
+  }, [activeThreadRef, sharedTerminalKey, terminalSessionsKnown]);
 
   useEffect(() => {
     const source = activePreviewMiniPlayer?.source;
@@ -1670,6 +1781,81 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
   const isGitRepo = liveIsGitRepo ?? recallCheckoutIsRepo(environmentId, gitStatusCwd) ?? true;
+  // Git Graph is open per project: every chat in it mirrors one flag.
+  const gitGraphProjectKey = activeThread
+    ? scopedProjectKey(scopeProjectRef(activeThread.environmentId, activeThread.projectId))
+    : null;
+  const gitGraphOpen = useGitGraphProjectState(gitGraphProjectKey).open;
+  useEffect(() => {
+    if (!activeThreadRef) return;
+    useRightPanelStore.getState().reconcileGitGraphSurface(activeThreadRef, gitGraphOpen);
+  }, [activeThreadRef, gitGraphOpen]);
+  const openGitGraph = () => {
+    if (!activeThreadRef || gitGraphProjectKey === null) return;
+    useGitGraphProjectStore.getState().update(gitGraphProjectKey, { open: true });
+    useRightPanelStore.getState().open(activeThreadRef, "git-graph");
+  };
+  const openGitGraphStable = useStableCallback(openGitGraph);
+
+  // Which profile opens which pages in this project, set up once and shared by its chats.
+  const browserProjectSetupKeyValue =
+    activeThread && activeThread.projectId
+      ? browserProjectSetupKey(activeThread.environmentId, activeThread.projectId)
+      : null;
+  const browserProjectSetup = useClientSettings((settings) =>
+    browserProjectSetupKeyValue === null
+      ? undefined
+      : settings.browserProjectSetups[browserProjectSetupKeyValue],
+  );
+  const browserDefaults = useBrowserDefaults();
+  const openPreviewForProjectTabs = useAtomCommand(previewEnvironment.open, {
+    reportFailure: true,
+  });
+  const [projectTabsDialogOpen, setProjectTabsDialogOpen] = useState(false);
+  const projectOpenTabs = rightPanelState.surfaces.flatMap((surface) => {
+    if (surface.kind !== "preview" || !surface.resourceId) return [];
+    const snapshot = panelPreviewSessions[surface.resourceId];
+    if (
+      !snapshot ||
+      snapshot.navStatus._tag === "Idle" ||
+      !/^https?:/i.test(snapshot.navStatus.url)
+    )
+      return [];
+    return [
+      { profileId: snapshot.profileId ?? browserDefaults.profileId, url: snapshot.navStatus.url },
+    ];
+  });
+  const openProjectTabs = (tabs: readonly { profileId: string; url: string }[]) => {
+    if (!activeThreadRef || tabs.length === 0) return;
+    useRightPanelStore.getState().show(activeThreadRef);
+    void openMissingBrowserTabs({
+      openPreview: openPreviewForProjectTabs,
+      threadRef: activeThreadRef,
+      projectId: activeThread?.projectId,
+      persistence: browserPersistence,
+      scopeKey: browserRestoreScopeKey({
+        environmentId: activeThreadRef.environmentId,
+        threadId: activeThreadRef.threadId,
+        projectId: activeThread?.projectId,
+        persistence: browserPersistence,
+      }),
+      tabs,
+    });
+  };
+  const openConfiguredProjectTabsStable = useStableCallback(() =>
+    openProjectTabs(browserProjectSetup?.tabs ?? []),
+  );
+  const setUpProjectTabsStable = useStableCallback(() => setProjectTabsDialogOpen(true));
+  const saveProjectTabs = (setup: BrowserProjectSetup, openNow: boolean) => {
+    if (browserProjectSetupKeyValue === null) return;
+    void updateClientSettings({
+      browserProjectSetups: {
+        ...getClientSettings().browserProjectSetups,
+        [browserProjectSetupKeyValue]: setup,
+      },
+    });
+    if (openNow) openProjectTabs(setup.tabs);
+  };
   // A provider-native subagent cannot take messages: a status bar replaces the
   // composer and its strips. Its approvals and questions are asked on the
   // top-level parent thread.
@@ -1887,6 +2073,11 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadRef?.environmentId ?? null,
     AuthPreviewOperateScope,
   );
+  useRestoreBrowserScope({
+    threadRef: activeThreadRef ?? null,
+    projectId: activeThread?.projectId,
+    enabled: isElectron && canOperatePreview,
+  });
   const supportsThreadPullRequests =
     serverConfig?.environment.capabilities.threadPullRequests === true;
   const visiblePullRequests = visibleThreadPullRequests(
@@ -2397,6 +2588,7 @@ export default function ChatView(props: ChatViewProps) {
     copyRightPanelFilePathStable,
     createBrowserSurface,
     createBrowserSurfaceStable,
+    createIsolatedBrowserSurfaceStable,
     moveRightPanelSurfaceStable,
     onOpenTurnDiffStable,
     openChangesFromThreadPanelStable,
@@ -3077,6 +3269,7 @@ export default function ChatView(props: ChatViewProps) {
       getShortcutContext={getShortcutContextStable}
       onSendAnnotation={sendPreviewAnnotationStable}
       onCloseSurface={closeRightPanelSurface}
+      gitGraph={{ cwd: activeWorkspaceRoot ?? null, projectId: activeThread?.projectId ?? null }}
       terminal={{
         launchContext: activeTerminalLaunchContext ?? null,
         focusRequestId: terminalFocusRequestId,
@@ -3144,6 +3337,7 @@ export default function ChatView(props: ChatViewProps) {
       maximized={rightPanelMaximized}
       onToggleMaximized={toggleRightPanelMaximizedStable}
     >
+      <BrowserPersistenceTitlebarControl />
       {panelToggleControls}
     </WorkspaceTitlebarControls>
   );
@@ -3849,10 +4043,10 @@ export default function ChatView(props: ChatViewProps) {
           environmentId={activeThreadRef.environmentId}
           activeSurfaceId={renderedRightPanelSurface?.id ?? null}
           pendingSurfaceIds={pendingFileSurfaceIds}
-          previewSessions={activePreviewState.sessions}
-          desktopByTabId={activePreviewState.desktopByTabId}
+          previewSessions={panelPreviewSessions}
+          desktopByTabId={panelDesktopByTabId}
           previewRuntimeTabId={resolvePreviewRuntimeTabId}
-          terminalLabelsById={activeTerminalLabelsById}
+          terminalLabelsById={panelTerminalLabelsById}
           onActivate={activateRightPanelSurfaceStable}
           onCloseSurface={closeRightPanelSurfaceStable}
           onRenameDevice={(surfaceId, title) => {
@@ -3866,6 +4060,14 @@ export default function ChatView(props: ChatViewProps) {
           onCopyFilePath={copyRightPanelFilePathStable}
           onAddBrowser={() => createBrowserSurface()}
           onAddBrowserInProfile={createBrowserSurfaceStable}
+          onAddGitGraph={openGitGraphStable}
+          onOpenProjectTabs={isElectron ? openConfiguredProjectTabsStable : undefined}
+          projectTabCount={browserProjectSetup?.tabs.length ?? 0}
+          onSetUpProjectTabs={
+            isElectron && browserProjectSetupKeyValue !== null ? setUpProjectTabsStable : undefined
+          }
+          gitGraphAvailable={isGitRepo && activeWorkspaceRoot !== undefined}
+          onAddIsolatedBrowser={createIsolatedBrowserSurfaceStable}
           onAddTerminal={addTerminalSurfaceStable}
           onAddDiff={addDiffSurfaceStable}
           onAddFiles={addFilesSurfaceStable}
@@ -3888,6 +4090,19 @@ export default function ChatView(props: ChatViewProps) {
       <LinkPullRequestDialogHost />
       <ThreadVisitWatermark threadRef={routeThreadRef} />
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
+      {projectTabsDialogOpen ? (
+        <ProjectTabsDialog
+          open={projectTabsDialogOpen}
+          onOpenChange={setProjectTabsDialogOpen}
+          projectTitle={activeProject?.title ?? "this project"}
+          profiles={browserDefaults.profiles}
+          profileAccents={browserDefaults.profileAccents}
+          defaultProfileId={browserDefaults.profileId}
+          setup={browserProjectSetup}
+          openTabs={projectOpenTabs}
+          onSave={saveProjectTabs}
+        />
+      ) : null}
     </div>
   );
   return (
