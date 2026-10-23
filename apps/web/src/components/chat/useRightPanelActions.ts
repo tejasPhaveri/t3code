@@ -14,6 +14,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { useDiffPanelStore } from "../../diffPanelStore";
+import { useSharedTabOrderStore } from "../../sharedTabOrder";
 import { type ThreadPanelPresentation } from "../../rightPanelLayout";
 import {
   selectActiveRightPanel,
@@ -53,6 +54,8 @@ interface RightPanelActionsInput {
   readonly pullRequestsSurfaceAvailable: boolean;
   readonly gitCwd: string | null;
   readonly activeProjectCwd: string | null;
+  /** The scoped project whose chats share one tab order; null outside a project. */
+  readonly sharedTabOrderProjectKey: string | null;
   readonly explicitDiffOpenRef: { current: ScopedThreadRef | null };
   readonly setTerminalFocusRequestId: Dispatch<SetStateAction<number>>;
   readonly onDiffPanelOpen: (() => void) | undefined;
@@ -246,8 +249,17 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   };
   const toggleRightPanelMaximizedStable = useStableCallback(toggleRightPanelMaximized);
   const moveRightPanelSurface = (surfaceId: string, toIndex: number) => {
-    if (activeThreadRef)
-      useRightPanelStore.getState().moveSurface(activeThreadRef, surfaceId, toIndex);
+    if (!activeThreadRef) return;
+    const store = useRightPanelStore.getState();
+    store.moveSurface(activeThreadRef, surfaceId, toIndex);
+    if (input.sharedTabOrderProjectKey === null) return;
+    useSharedTabOrderStore
+      .getState()
+      .record(
+        input.sharedTabOrderProjectKey,
+        activeThreadRef.threadId,
+        useRightPanelStore.getState().byThreadKey[scopedThreadKey(activeThreadRef)]?.surfaces ?? [],
+      );
   };
   const moveRightPanelSurfaceStable = useStableCallback(moveRightPanelSurface);
   const copyRightPanelFilePath = (relativePath: string) => {

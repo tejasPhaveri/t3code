@@ -10,6 +10,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { useClosedViewStore } from "./closedViewStore";
 import { resolveStorage } from "./lib/storage";
 import type { ThreadPanelPresentation } from "./rightPanelLayout";
+import { applySharedTabOrder } from "./sharedTabOrder";
 import type { ChatFileAttachment } from "./types";
 
 const RIGHT_PANEL_KINDS = [
@@ -185,6 +186,8 @@ interface RightPanelStoreState {
   closeSurfacesToRight: (ref: ScopedThreadRef, surfaceId: string) => void;
   closeAllSurfaces: (ref: ScopedThreadRef) => void;
   moveSurface: (ref: ScopedThreadRef, surfaceId: string, toIndex: number) => void;
+  /** Sorts the tabs this chat shares with its project into the project's tab order. */
+  applySharedTabOrder: (ref: ScopedThreadRef, order: readonly string[]) => void;
   reconcileBrowserSurfaces: (
     ref: ScopedThreadRef,
     tabIds: readonly string[],
@@ -993,6 +996,15 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             const surfaces = [...current.surfaces];
             surfaces.splice(toIndex, 0, ...surfaces.splice(fromIndex, 1));
             return { ...current, surfaces };
+          }),
+        ),
+      applySharedTabOrder: (ref, order) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) => {
+            const surfaces = applySharedTabOrder(ref.threadId, current.surfaces, order);
+            return surfaces === current.surfaces
+              ? current
+              : { ...current, surfaces: [...surfaces] };
           }),
         ),
       reconcileBrowserSurfaces: (ref, tabIds, hiddenTabIds) =>

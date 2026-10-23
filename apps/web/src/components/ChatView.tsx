@@ -166,6 +166,7 @@ import {
 } from "../browser/browserScope";
 import { BrowserPersistenceTitlebarControl } from "../browser/BrowserPersistenceTitlebarControl";
 import { useGitGraphProjectState, useGitGraphProjectStore } from "./gitGraph/gitGraphProjectStore";
+import { useSharedTabOrderStore } from "../sharedTabOrder";
 import {
   browserProjectSetupKey,
   openMissingBrowserTabs,
@@ -1781,18 +1782,30 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
   const isGitRepo = liveIsGitRepo ?? recallCheckoutIsRepo(environmentId, gitStatusCwd) ?? true;
-  // Git Graph is open per project: every chat in it mirrors one flag.
-  const gitGraphProjectKey = activeThread
+  // Git Graph and tab order are per project: every chat in it mirrors them.
+  const activeScopedProjectKey = activeThread
     ? scopedProjectKey(scopeProjectRef(activeThread.environmentId, activeThread.projectId))
     : null;
-  const gitGraphOpen = useGitGraphProjectState(gitGraphProjectKey).open;
+  const gitGraphOpen = useGitGraphProjectState(activeScopedProjectKey).open;
   useEffect(() => {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().reconcileGitGraphSurface(activeThreadRef, gitGraphOpen);
   }, [activeThreadRef, gitGraphOpen]);
+  const sharedTabOrder = useSharedTabOrderStore((state) =>
+    activeScopedProjectKey === null ? undefined : state.byProjectKey[activeScopedProjectKey],
+  );
+  // Runs after the reconcilers above, so tabs another chat just added land in the project order.
+  useEffect(() => {
+    if (!activeThreadRef || activeScopedProjectKey === null) return;
+    // Including a new tab updates the order, which runs this again to sort it.
+    useSharedTabOrderStore
+      .getState()
+      .include(activeScopedProjectKey, activeThreadRef.threadId, rightPanelState.surfaces);
+    useRightPanelStore.getState().applySharedTabOrder(activeThreadRef, sharedTabOrder ?? []);
+  }, [activeThreadRef, activeScopedProjectKey, sharedTabOrder, rightPanelState.surfaces]);
   const openGitGraph = () => {
-    if (!activeThreadRef || gitGraphProjectKey === null) return;
-    useGitGraphProjectStore.getState().update(gitGraphProjectKey, { open: true });
+    if (!activeThreadRef || activeScopedProjectKey === null) return;
+    useGitGraphProjectStore.getState().update(activeScopedProjectKey, { open: true });
     useRightPanelStore.getState().open(activeThreadRef, "git-graph");
   };
   const openGitGraphStable = useStableCallback(openGitGraph);
@@ -2599,6 +2612,7 @@ export default function ChatView(props: ChatViewProps) {
     shortcuts: rightPanelShortcuts,
   } = useRightPanelActions({
     activeThreadRef,
+    sharedTabOrderProjectKey: activeScopedProjectKey,
     activeProject,
     activeRightPanelSurface,
     activePreviewState,
