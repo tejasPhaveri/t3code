@@ -22,6 +22,14 @@ T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR=true npx pnpm@12.14.0 exec node scripts/bu
 scripts/install-fork-mac.sh   # newest release/T3-Code-*-arm64.zip by default
 ```
 
+To publish it for teammates, push the `fork` branch, then tag and release (`gh release create` with `--target` fails on this fork; push the tag first):
+
+```sh
+git tag fork-v0.1.1-YYYYMMDD.N && git push origin fork-v0.1.1-YYYYMMDD.N
+gh release create fork-v0.1.1-YYYYMMDD.N --repo tejasPhaveri/t3code --verify-tag \
+  release/T3-Code-*-YYYYMMDD.N-arm64.zip release/T3-Code-*-YYYYMMDD.N-arm64.dmg
+```
+
 `T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR` reuses `native/resource-monitor/target/aarch64-apple-darwin/release/t3-resource-monitor`, which was copied from the Nightly bundle because Rust is not installed.
 
 ## Installing on another Mac
@@ -29,13 +37,14 @@ scripts/install-fork-mac.sh   # newest release/T3-Code-*-arm64.zip by default
 Builds are published as GitHub releases on `tejasPhaveri/t3code` (Apple Silicon only). The zip is ad-hoc signed, so the install script, not a double-click on the dmg, is the supported path: it clears quarantine and re-signs. It refuses to replace an `/Applications/T3 Code.app` that is not the fork.
 
 ```sh
-TAG=<release tag>
 DIR="$(mktemp -d)"
-gh release download "$TAG" --repo tejasPhaveri/t3code --pattern '*-arm64.zip' --dir "$DIR"
-curl -fsSL "https://raw.githubusercontent.com/tejasPhaveri/t3code/$TAG/scripts/install-fork-mac.sh" -o "$DIR/install.sh"
+gh release download --repo tejasPhaveri/t3code --pattern '*-arm64.zip' --dir "$DIR"   # latest release
+curl -fsSL https://raw.githubusercontent.com/tejasPhaveri/t3code/fork/scripts/install-fork-mac.sh -o "$DIR/install.sh"
 bash "$DIR/install.sh" "$DIR"/T3-Code-*-arm64.zip
 open "/Applications/T3 Code.app"
 ```
+
+Quit the fork before updating. Installs never update themselves: auto-update stays off because upstream's updater would replace the fork, and macOS only applies in-place updates to Developer ID-signed apps. Rerunning these steps is the update.
 
 The fork starts with empty data in `~/.t3-fork`. To bring existing projects and threads, do this before its first launch with every T3 Code app quit: `mkdir -p ~/.t3-fork && cp -R ~/.t3/userdata ~/.t3-fork/userdata`. After each install macOS asks once for Keychain access; choose Always Allow.
 
