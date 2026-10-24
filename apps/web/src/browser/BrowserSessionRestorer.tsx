@@ -278,29 +278,27 @@ export function useRestoreBrowserScope(input: {
         continue;
       }
       restoringScopeKeys.add(scopeKey);
-      void (async () => {
-        try {
-          // Finishes even if the chat changes: any chat in the scope owns its tabs equally.
-          const opened = await openMissingBrowserTabs({
-            openPreview,
-            threadRef,
-            projectId,
-            persistence,
-            scopeKey,
-            tabs: planned,
-          });
-          if (!opened) {
-            retryTimer ??= window.setTimeout(
-              () => setRetryCount((count) => count + 1),
-              RESTORE_RETRY_MS,
-            );
+      // Finishes even if the chat changes: any chat in the scope owns its tabs equally.
+      void openMissingBrowserTabs({
+        openPreview,
+        threadRef,
+        projectId,
+        persistence,
+        scopeKey,
+        tabs: planned,
+      })
+        .then((opened) => {
+          if (opened) {
+            markScopeRestored(scopeKey);
             return;
           }
-          markScopeRestored(scopeKey);
-        } finally {
-          restoringScopeKeys.delete(scopeKey);
-        }
-      })();
+          if (retryTimer !== null) return;
+          retryTimer = window.setTimeout(
+            () => setRetryCount((count) => count + 1),
+            RESTORE_RETRY_MS,
+          );
+        })
+        .finally(() => restoringScopeKeys.delete(scopeKey));
     }
     return () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);

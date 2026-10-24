@@ -1,14 +1,11 @@
-import {
-  DEFAULT_BROWSER_PROFILE_ID,
-  pullRequestHostOf,
-  type SourceControlProviderKind,
-} from "@t3tools/contracts";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { DEFAULT_BROWSER_PROFILE_ID } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
 import {
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
-} from "@t3tools/shared/threadPullRequests";
+} from "@t3tools/client-runtime/thread-pull-requests";
 import type {
   ContextMenuItem,
   EnvironmentId,
@@ -781,7 +778,7 @@ function PullRequestSurfaceIcon({
   const host =
     surface.host ??
     (identity?.provider
-      ? pullRequestHostOf(identity, identity.provider as SourceControlProviderKind)
+      ? sourceControlClients.changeRequestHost(identity, identity.provider)
       : null);
   const configs = useServerConfigs();
   const capabilities =
