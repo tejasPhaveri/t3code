@@ -7,6 +7,7 @@ import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { buildFileTree, type FileTreeNode } from "./fileTree";
+import { useSourceControlLayoutStore, useSourceControlOpen } from "./sourceControlLayoutStore";
 import { confirmGitGraphAction } from "./useGitGraphAction";
 
 type RunAction = (
@@ -86,14 +87,14 @@ function FileTreeRows(props: {
   readonly nodes: readonly FileTreeNode[];
   readonly depth: number;
   readonly staged: boolean;
-  readonly collapsed: ReadonlySet<string>;
+  readonly isCollapsed: (key: string) => boolean;
   readonly onToggle: (key: string) => void;
   readonly onStage: (paths: readonly string[]) => void;
   readonly onUnstage: (paths: readonly string[]) => void;
   readonly onDiscard: (paths: readonly string[]) => void;
 }) {
   return props.nodes.map((node) => {
-    const isCollapsed = props.collapsed.has(node.key);
+    const isCollapsed = props.isCollapsed(node.key);
     return (
       <div key={node.key}>
         <div
@@ -153,6 +154,8 @@ function FileTreeRows(props: {
 }
 
 function ChangeGroup(props: {
+  /** Identifies this group across chats, so its open state and folders are remembered. */
+  readonly layoutKey: string;
   readonly title: string;
   readonly files: readonly GitGraphWorktreeFile[];
   readonly staged: boolean;
@@ -160,8 +163,10 @@ function ChangeGroup(props: {
   readonly onUnstage: (paths: readonly string[]) => void;
   readonly onDiscard: (paths: readonly string[]) => void;
 }) {
-  const [open, setOpen] = useState(true);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [open, setOpen] = useSourceControlOpen(props.layoutKey, true);
+  const openByKey = useSourceControlLayoutStore((state) => state.openByKey);
+  const setLayoutOpen = useSourceControlLayoutStore((state) => state.setOpen);
+  const folderKey = (key: string) => `${props.layoutKey}/${key}`;
   if (props.files.length === 0) return null;
   const allPaths = props.files.map((file) => file.path);
   return (
@@ -197,13 +202,8 @@ function ChangeGroup(props: {
           nodes={buildFileTree(props.files)}
           depth={1}
           staged={props.staged}
-          collapsed={collapsed}
-          onToggle={(key) => {
-            const next = new Set(collapsed);
-            if (next.has(key)) next.delete(key);
-            else next.add(key);
-            setCollapsed(next);
-          }}
+          isCollapsed={(key) => openByKey[folderKey(key)] === false}
+          onToggle={(key) => setLayoutOpen(folderKey(key), openByKey[folderKey(key)] === false)}
           onStage={props.onStage}
           onUnstage={props.onUnstage}
           onDiscard={props.onDiscard}
@@ -219,7 +219,7 @@ function WorktreeSection(props: {
   readonly runAction: RunAction;
 }) {
   const { worktree } = props;
-  const [expanded, setExpanded] = useState(worktree.current);
+  const [expanded, setExpanded] = useSourceControlOpen(worktree.path, worktree.current);
   const [message, setMessage] = useState("");
   const [committing, setCommitting] = useState(false);
   const target = worktree.current ? {} : { worktreePath: worktree.path };
@@ -333,6 +333,7 @@ function WorktreeSection(props: {
           </div>
           {changeCount === 0 ? <div className="px-3 text-muted-foreground">No changes.</div> : null}
           <ChangeGroup
+            layoutKey={`${worktree.path}:staged`}
             title="Staged Changes"
             files={worktree.staged}
             staged
@@ -341,6 +342,7 @@ function WorktreeSection(props: {
             onDiscard={(paths) => void discard(paths)}
           />
           <ChangeGroup
+            layoutKey={`${worktree.path}:changes`}
             title="Changes"
             files={worktree.unstaged}
             staged={false}
