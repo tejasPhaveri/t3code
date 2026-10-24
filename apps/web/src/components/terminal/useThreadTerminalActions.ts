@@ -17,6 +17,7 @@ import { readEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
 import { useKnownTerminalSessions } from "../../state/terminalSessions";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useRememberedTerminalsStore } from "../../rememberedTerminalsStore";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../../terminalUiStateStore";
 
 /** Where a new terminal starts. Omitted fields fall back to the thread's project and worktree. */
@@ -133,6 +134,7 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     if (!threadRef || !canWrite()) return;
     const environmentId = threadRef.environmentId;
     const threadId = ownerThreadId ?? threadRef.threadId;
+    useRememberedTerminalsStore.getState().forget(environmentId, { threadId, terminalId });
     void (async () => {
       const closeResult = await closeTerminalCommand({
         environmentId,

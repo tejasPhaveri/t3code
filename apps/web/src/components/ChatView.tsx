@@ -64,7 +64,7 @@ import {
   ProviderInstanceId,
   type ServerProvider,
   type ScopedThreadRef,
-  type ThreadId,
+  ThreadId,
   type RunId,
   ProviderInteractionMode,
   resolveIdleCompaction,
@@ -167,6 +167,7 @@ import {
 import { BrowserPersistenceTitlebarControl } from "../browser/BrowserPersistenceTitlebarControl";
 import { useGitGraphProjectState, useGitGraphProjectStore } from "./gitGraph/gitGraphProjectStore";
 import { takeCarriedActiveTab, useSharedTabOrderStore } from "../sharedTabOrder";
+import { type RememberedTerminal, useRememberedTerminalsStore } from "../rememberedTerminalsStore";
 import { canReloadBrowserTabs, reloadBrowserTabs } from "../browser/reloadBrowserTabs";
 import {
   browserProjectSetupKey,
@@ -423,6 +424,8 @@ const EMPTY_HELD_TURN_DIFF_SUMMARIES: readonly never[] = [];
 const noopHeldTurnDiff = (_turnId: RunId, _filePath?: string) => {};
 const noopHeldRevert = (_targetTurnCount: number) => {};
 const noopHeldAttachment = (_attachment: ChatFileAttachment) => {};
+
+const EMPTY_REMEMBERED_TERMINALS: readonly RememberedTerminal[] = [];
 
 export default function ChatView(props: ChatViewProps) {
   const {
@@ -983,14 +986,43 @@ export default function ChatView(props: ChatViewProps) {
     threadId: null,
   });
   const threadTitleById = new Map(threadShells.map((shell) => [shell.id, shell.title] as const));
-  const sharedTerminalSessions = (environmentTerminalSessions ?? []).filter((session) => {
-    if (!activeThreadRef || session.target.threadId === activeThreadRef.threadId) return false;
+  const rememberedTerminals =
+    useRememberedTerminalsStore((state) =>
+      activeThreadRef ? state.byEnvironmentId[activeThreadRef.environmentId] : undefined,
+    ) ?? EMPTY_REMEMBERED_TERMINALS;
+  const liveTerminalKeys = new Set(
+    (environmentTerminalSessions ?? []).map(
+      (session) => `${session.target.threadId}\0${session.target.terminalId}`,
+    ),
+  );
+  // Live ones carry their summary; remembered ones came back from a restart without a shell yet.
+  const terminalCandidates = [
+    ...(environmentTerminalSessions ?? []).map((session) => ({
+      threadId: session.target.threadId,
+      terminalId: session.target.terminalId,
+      summary: session.state.summary,
+    })),
+    ...rememberedTerminals
+      .filter((terminal) => !liveTerminalKeys.has(`${terminal.threadId}\0${terminal.terminalId}`))
+      .map((terminal) => ({ ...terminal, summary: null })),
+  ];
+  const sharedTerminalSessions = terminalCandidates.filter((terminal) => {
+    if (!activeThreadRef || terminal.threadId === activeThreadRef.threadId) return false;
     const ownerProjectId = projectIdByThreadKey.get(
-      scopedThreadKey(scopeThreadRef(activeThreadRef.environmentId, session.target.threadId)),
+      scopedThreadKey(
+        scopeThreadRef(activeThreadRef.environmentId, ThreadId.make(terminal.threadId)),
+      ),
     );
+    // A remembered terminal of a deleted chat has no chat to reopen it in.
+    if (
+      ownerProjectId === undefined &&
+      !liveTerminalKeys.has(`${terminal.threadId}\0${terminal.terminalId}`)
+    ) {
+      return false;
+    }
     return previewSessionVisibleTo(
       {
-        threadId: session.target.threadId,
+        threadId: terminal.threadId,
         ...(ownerProjectId === undefined ? {} : { projectId: ownerProjectId }),
       },
       {
@@ -1001,15 +1033,26 @@ export default function ChatView(props: ChatViewProps) {
     );
   });
   const terminalSessionsKnown = environmentTerminalSessions !== null;
+  const liveTerminalKey = [...liveTerminalKeys].join("\n");
+  useEffect(() => {
+    if (!activeThreadRef || environmentTerminalSessions === null || liveTerminalKey === "") return;
+    useRememberedTerminalsStore.getState().remember(
+      activeThreadRef.environmentId,
+      liveTerminalKey.split("\n").map((entry) => {
+        const [threadId = "", terminalId = ""] = entry.split("\0");
+        return { threadId, terminalId };
+      }),
+    );
+  }, [activeThreadRef, environmentTerminalSessions, liveTerminalKey]);
   const sharedTerminalKey = sharedTerminalSessions
-    .map((session) => `${session.target.threadId}\0${session.target.terminalId}`)
+    .map((terminal) => `${terminal.threadId}\0${terminal.terminalId}`)
     .join("\n");
   const panelTerminalLabelsById = new Map(activeTerminalLabelsById);
-  for (const session of sharedTerminalSessions) {
-    const ownerTitle = threadTitleById.get(session.target.threadId);
-    const label = resolveTerminalSessionLabel(session.target.terminalId, session.state.summary);
+  for (const terminal of sharedTerminalSessions) {
+    const ownerTitle = threadTitleById.get(ThreadId.make(terminal.threadId));
+    const label = resolveTerminalSessionLabel(terminal.terminalId, terminal.summary);
     panelTerminalLabelsById.set(
-      `${session.target.threadId}:${session.target.terminalId}`,
+      `${terminal.threadId}:${terminal.terminalId}`,
       ownerTitle ? `${label} · ${ownerTitle}` : label,
     );
   }
