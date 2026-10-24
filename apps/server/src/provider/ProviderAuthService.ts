@@ -12,6 +12,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Function from "effect/Function";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
@@ -65,6 +66,8 @@ export class ProviderAuthService extends Context.Service<
   }
 >()("t3/provider/ProviderAuthService") {}
 
+const INSTANCE_REBUILD_GRACE = "10 seconds";
+
 export const makeProviderAuthService = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -87,6 +90,17 @@ export const makeProviderAuthService = Effect.gen(function* () {
     }
     return instance.auth;
   });
+
+  // Saving settings rebuilds the instances they change, and the client can ask about one
+  // before the registry has it back. Give it a while to appear before calling it gone.
+  const awaitInstance = Effect.fn("ProviderAuthService.awaitInstance")(
+    function* (instanceId: ProviderInstanceId, changes: PubSub.Subscription<void>) {
+      while ((yield* registry.getInstance(instanceId)) === undefined) {
+        yield* PubSub.take(changes);
+      }
+    },
+    Effect.timeoutOrElse({ duration: INSTANCE_REBUILD_GRACE, orElse: () => Effect.void }),
+  );
 
   // Native sessions may still belong to the previous provider after the
   // selected model changes. Read session bindings, not the selected model,
@@ -271,7 +285,9 @@ export const makeProviderAuthService = Effect.gen(function* () {
     subscribe: Function.flow(
       Effect.fn("ProviderAuthService.subscribe")(function* (input, ownerSessionId) {
         const changes = yield* registry.subscribeChanges;
-        const initial = yield* getController(input.instanceId, "subscribe");
+        const initial = yield* awaitInstance(input.instanceId, changes).pipe(
+          Effect.andThen(getController(input.instanceId, "subscribe")),
+        );
         return Stream.concat(
           Stream.succeed(initial),
           Stream.fromSubscription(changes).pipe(

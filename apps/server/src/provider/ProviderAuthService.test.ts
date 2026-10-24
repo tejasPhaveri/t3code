@@ -19,6 +19,7 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
@@ -348,7 +349,7 @@ const makeStreamingController = Effect.fn("ProviderAuthService.test.makeStreamin
 );
 
 const makeSubscriptionHarness = Effect.fn("ProviderAuthService.test.makeSubscriptionHarness")(
-  function* (initial: ProviderInstance, replaceDuringFirstLookup?: ProviderInstance) {
+  function* (initial: ProviderInstance | undefined, replaceDuringFirstLookup?: ProviderInstance) {
     const changes = yield* PubSub.unbounded<void>();
     let current: ProviderInstance | undefined = initial;
     let pendingReplacement = replaceDuringFirstLookup;
@@ -554,6 +555,24 @@ describe("ProviderAuthService", () => {
     }),
   );
 
+  it.effect("waits for an instance that saving settings has not rebuilt yet", () =>
+    Effect.gen(function* () {
+      const controller = yield* makeStreamingController(owner);
+      yield* SubscriptionRef.set(controller.state, waitingAuthState);
+      // The first lookup misses it, and the registry publishes it right after.
+      const { service } = yield* makeSubscriptionHarness(
+        undefined,
+        makeInstance({ instanceId, enabled: true, auth: controller.auth }),
+      );
+
+      const states = yield* service
+        .subscribe({ instanceId }, owner)
+        .pipe(Stream.take(1), Stream.runCollect);
+
+      assert.deepStrictEqual(states, [waitingAuthState]);
+    }),
+  );
+
   it.effect("ends the subscription with a setup error when the instance is removed", () =>
     Effect.gen(function* () {
       const controller = yield* makeStreamingController(owner);
@@ -591,7 +610,10 @@ describe("ProviderAuthService", () => {
         Stream.runCollect(service.subscribe({ instanceId: id }, owner)),
       ];
       for (const operation of operations) {
-        const error = yield* Effect.flip(operation);
+        const pending = yield* Effect.forkChild(Effect.flip(operation));
+        // A subscription gives a missing instance a while to be rebuilt before failing.
+        yield* TestClock.adjust("1 minute");
+        const error = yield* Fiber.join(pending);
         assert.instanceOf(error, ProviderSetupError);
         assert.strictEqual(error.instanceId, id);
         assert.include(error.detail, detail);
