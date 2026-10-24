@@ -933,9 +933,9 @@ describe("ThreadSettlementServiceV2 terminals", () => {
   it.effect("keeps the terminals of a thread re-engaged before the event ran", () =>
     Effect.scoped(
       Effect.gen(function* () {
-        const settled = appThread("reengaged-thread", "settled");
-        const reengaged = appThread("reengaged-thread", "active");
-        const marker = appThread("marker-thread", "settled");
+        const settled = appThread("reengaged-thread", "settled", "/worktrees/reengaged");
+        const reengaged = appThread("reengaged-thread", "active", "/worktrees/reengaged");
+        const marker = appThread("marker-thread", "settled", "/worktrees/marker");
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([]),
           currentThreads: [reengaged, marker],
@@ -945,6 +945,27 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
           yield* startHarness(service, fixture.activation, fixture.snapshotReads);
           yield* fixture.publishEvent(settledEvent(settled));
+          yield* fixture.publishEvent(settledEvent(marker));
+          assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: marker.id });
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("leaves the terminals of a thread in the project's own checkout open", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const checkout = appThread("checkout-thread", "settled");
+        const marker = appThread("marker-thread", "settled", "/worktrees/marker");
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [checkout, marker],
+        });
+
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(checkout));
           yield* fixture.publishEvent(settledEvent(marker));
           assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: marker.id });
         }).pipe(Effect.provide(fixture.layer));

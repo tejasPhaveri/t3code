@@ -539,9 +539,12 @@ export const make = Effect.gen(function* () {
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);
       if (settled.settledOverride !== "settled") return;
-      yield* terminals.closeIdle({ threadId });
       const worktreePath = settled.worktreePath;
-      if (worktreePath === null || !(yield* fileSystem.exists(worktreePath))) return;
+      // This fork shows a chat's terminals in every chat of its project, so settling a chat
+      // in the project's own checkout leaves its terminals to the others. A worktree's are its own.
+      if (worktreePath === null) return;
+      yield* terminals.closeIdle({ threadId });
+      if (!(yield* fileSystem.exists(worktreePath))) return;
       // Closing and the worktree check wait on I/O. A thread re-engaged
       // meanwhile is working again, so its worktree is no place for cleanup.
       const thread = yield* projections.getThread(threadId);

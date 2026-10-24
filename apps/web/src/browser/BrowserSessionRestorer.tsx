@@ -303,5 +303,5 @@ export function useRestoreBrowserScope(input: {
     return () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [enabled, hydrated, persistence, projectId, retryCount, threadRef]);
+  }, [enabled, hydrated, openPreview, persistence, projectId, retryCount, threadRef]);
 }
