@@ -51,5 +51,6 @@ The fork starts with empty data in `~/.t3-fork`. To bring existing projects and 
 ## Traps
 
 - **No dev watcher may run during a build.** `vp pack --watch` and `apps/desktop/scripts/dev-electron.mjs` rewrite `apps/desktop/dist-electron` and relaunch a `T3 Code (Dev)` window on every change. A build packaged mid-rewrite ships without `main.cjs`. That app then blocks on an error dialog nobody can see: a process with no window and no output. The install script refuses such a zip. `dev-electron.mjs` runs as plain `node scripts/dev-electron.mjs`, so a search for the repo path misses it. Find it by its working directory.
+- **`ERR_PNPM_UNUSED_PATCH` during "Installing staged production dependencies".** The staged install has no lockfile, so a caret range resolves to the newest release and a patch keyed to the locked version goes unused. Pin that dependency to the patched version exactly (as `node-pty` is in `apps/server/package.json`).
 - **Keep `CFBundleName` as built (`T3 Code (Beta)`).** Electron finds its helper apps by that name. Renaming it fails with `Unable to find helper app`. Change `CFBundleDisplayName` instead.
 - The menu bar and window title still say Beta and Nightly. The stage label comes from the version string, and the window title from the copied settings. Neither affects behavior.
