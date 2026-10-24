@@ -12,6 +12,10 @@ export function activateBrowserTab(tabId: string): void {
   useActivatedBrowserTabsStore.setState({ tabIds: new Set([...tabIds, tabId]) });
 }
 
+export function readActivatedBrowserTabs(): ReadonlySet<string> {
+  return useActivatedBrowserTabsStore.getState().tabIds;
+}
+
 export function useActivatedBrowserTabs(): ReadonlySet<string> {
   return useActivatedBrowserTabsStore((state) => state.tabIds);
 }

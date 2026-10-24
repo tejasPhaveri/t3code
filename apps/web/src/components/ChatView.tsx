@@ -167,6 +167,7 @@ import {
 import { BrowserPersistenceTitlebarControl } from "../browser/BrowserPersistenceTitlebarControl";
 import { useGitGraphProjectState, useGitGraphProjectStore } from "./gitGraph/gitGraphProjectStore";
 import { useSharedTabOrderStore } from "../sharedTabOrder";
+import { canReloadBrowserTabs, reloadBrowserTabs } from "../browser/reloadBrowserTabs";
 import {
   browserProjectSetupKey,
   openMissingBrowserTabs,
@@ -3343,13 +3344,27 @@ export default function ChatView(props: ChatViewProps) {
     />
   );
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
+  const browserTabIds = rightPanelState.surfaces.flatMap((surface) =>
+    surface.kind === "preview" && surface.resourceId !== null ? [surface.resourceId] : [],
+  );
+  const reloadAllBrowserTabs = () => {
+    if (!activeThreadRef) return;
+    const reloaded = reloadBrowserTabs(activeThreadRef.environmentId, browserTabIds);
+    toastManager.add(
+      stackedThreadToast({
+        type: "success",
+        title:
+          reloaded === 0
+            ? "No loaded tabs to reload"
+            : `Reloaded ${reloaded} browser ${reloaded === 1 ? "tab" : "tabs"}`,
+      }),
+    );
+  };
   const panelLayoutControls = (
     <WorkspaceTitlebarControls
-      showMaximizeControl={!shouldUsePlanSidebarSheet}
-      rightPanelOpen={rightPanelOpen}
-      animationsActive={panelAnimationsActive}
-      maximized={rightPanelMaximized}
-      onToggleMaximized={toggleRightPanelMaximizedStable}
+      onReloadBrowserTabs={
+        canReloadBrowserTabs && browserTabIds.length > 0 ? reloadAllBrowserTabs : null
+      }
     >
       <BrowserPersistenceTitlebarControl />
       {panelToggleControls}

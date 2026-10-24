@@ -1,4 +1,4 @@
-import { PanelBottomIcon, PanelRightIcon, SquareMenuIcon } from "lucide-react";
+import { PanelBottomIcon, PanelRightIcon, RotateCwIcon, SquareMenuIcon } from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type ReactElement, type ReactNode } from "react";
@@ -6,6 +6,7 @@ import { memo, type ReactElement, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
+import { Button } from "../ui/button";
 import { PopoverCreateHandle, PopoverTrigger } from "../ui/popover";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -175,13 +176,10 @@ export function ThreadPanelHeaderControl(props: PanelLayoutControlsProps) {
   );
 }
 
-/** The window's top-right panel controls, with the maximize toggle while the panel is open. */
+/** The window's top-right panel controls, with reload-all while the chat shows browser tabs. */
 export function WorkspaceTitlebarControls(props: {
-  readonly showMaximizeControl: boolean;
-  readonly rightPanelOpen: boolean;
-  readonly animationsActive: boolean;
-  readonly maximized: boolean;
-  readonly onToggleMaximized: () => void;
+  /** Null when the chat has no browser tabs to reload. */
+  readonly onReloadBrowserTabs: (() => void) | null;
   readonly children: ReactNode;
 }) {
   return (
@@ -189,24 +187,23 @@ export function WorkspaceTitlebarControls(props: {
       className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]"
       data-workspace-titlebar-controls
     >
-      {props.showMaximizeControl ? (
-        <span
-          aria-hidden={!props.rightPanelOpen}
-          className={cn(
-            "flex shrink-0",
-            props.animationsActive &&
-              "motion-safe:transition-opacity motion-safe:duration-(--panel-animation-duration) motion-safe:ease-out",
-            props.rightPanelOpen
-              ? "pointer-events-auto opacity-100"
-              : "pointer-events-none absolute right-full mr-1 opacity-0",
-          )}
-          inert={!props.rightPanelOpen}
-        >
-          <RightPanelMaximizeControl
-            maximized={props.maximized}
-            onToggle={props.onToggleMaximized}
+      {props.onReloadBrowserTabs ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                className="pointer-events-auto shrink-0 [-webkit-app-region:no-drag]"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Reload all browser tabs"
+                onClick={props.onReloadBrowserTabs}
+              >
+                <RotateCwIcon className="size-4" />
+              </Button>
+            }
           />
-        </span>
+          <TooltipPopup side="bottom">Reload all browser tabs</TooltipPopup>
+        </Tooltip>
       ) : null}
       <div className="pointer-events-auto flex h-full items-center">{props.children}</div>
     </div>
