@@ -1,8 +1,9 @@
 import { PanelBottomIcon, PanelRightIcon, RotateCwIcon, SquareMenuIcon } from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
-import { memo, type ReactElement, type ReactNode } from "react";
+import { memo, type ReactElement, type ReactNode, useLayoutEffect, useRef } from "react";
 
+import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
@@ -176,14 +177,32 @@ export function ThreadPanelHeaderControl(props: PanelLayoutControlsProps) {
   );
 }
 
+const TITLEBAR_CONTROLS_WIDTH_PROPERTY = "--workspace-titlebar-controls-width";
+
 /** The window's top-right panel controls, with reload-all while the chat shows browser tabs. */
 export function WorkspaceTitlebarControls(props: {
   /** Null when the chat has no browser tabs to reload. */
   readonly onReloadBrowserTabs: (() => void) | null;
   readonly children: ReactNode;
 }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  // The headers under these fixed controls drag the window everywhere they do not reserve.
+  useLayoutEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const root = document.documentElement.style;
+    const publish = () =>
+      root.setProperty(TITLEBAR_CONTROLS_WIDTH_PROPERTY, `${Math.ceil(element.offsetWidth)}px`);
+    publish();
+    const stopObserving = observeResize(element, publish);
+    return () => {
+      stopObserving();
+      root.removeProperty(TITLEBAR_CONTROLS_WIDTH_PROPERTY);
+    };
+  }, []);
   return (
     <div
+      ref={containerRef}
       className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]"
       data-workspace-titlebar-controls
     >

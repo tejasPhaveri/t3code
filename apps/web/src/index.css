@@ -125,6 +125,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --workspace-native-controls-inset: 0px;
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: 0.75rem;
+  /* Measured by WorkspaceTitlebarControls; headers keep this much clear of window dragging. */
+  --workspace-titlebar-controls-width: 7rem;
   --workspace-titlebar-scroll-fade-height: 1.5rem;
   --chat-content-max-width: 46rem;
   --thread-details-panel-width: 17.5rem;
