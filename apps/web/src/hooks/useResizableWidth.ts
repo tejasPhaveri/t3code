@@ -42,22 +42,25 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
     return Math.max(minWidth, Math.min(maxWidth, value));
   };
 
-  const readWidth = () => {
-    if (typeof window === "undefined") return defaultWidth;
+  // Null until dragged, so the default keeps following bounds measured after mount.
+  const readWidth = (): number | null => {
+    if (typeof window === "undefined") return null;
     try {
-      const stored = getLocalStorageItem(storageKey, WidthSchema);
-      return clamp(stored ?? defaultWidth);
+      return getLocalStorageItem(storageKey, WidthSchema) ?? null;
     } catch (error) {
       console.error("Could not read persisted panel width.", error);
-      return defaultWidth;
+      return null;
     }
   };
-  const [widthState, setWidthState] = useState(() => ({ storageKey, width: readWidth() }));
+  const [widthState, setWidthState] = useState<{
+    readonly storageKey: string;
+    readonly width: number | null;
+  }>(() => ({ storageKey, width: readWidth() }));
   if (widthState.storageKey !== storageKey) {
     setWidthState({ storageKey, width: readWidth() });
   }
 
-  const clampedWidth = clamp(widthState.width);
+  const clampedWidth = clamp(widthState.width ?? defaultWidth);
   const latestOptions = useRef({ clamp, storageKey, width: clampedWidth });
   useLayoutEffect(() => {
     latestOptions.current = { clamp, storageKey, width: clampedWidth };

@@ -17,6 +17,8 @@ const PREVIEW_PANEL_MAX_WIDTH_FRACTION = 0.7;
  */
 const SIBLING_COLUMN_MIN_WIDTH = 360;
 const PREVIEW_PANEL_DEFAULT_WIDTH = 540;
+/** A filling panel still leaves the column beside it 1.2x its minimum. */
+const FILL_SIBLING_COLUMN_WIDTH = SIBLING_COLUMN_MIN_WIDTH * 1.2;
 
 export function usePreviewPanelInlineSize(
   hostRef?: RefObject<HTMLElement | null>,
@@ -24,13 +26,17 @@ export function usePreviewPanelInlineSize(
     readonly enabled?: boolean | undefined;
     readonly widthStorageKey?: string | undefined;
     readonly defaultWidth?: number | undefined;
+    /** Until dragged, take the room the sibling column can spare instead of the default width. */
+    readonly fill?: boolean | undefined;
     readonly container?: HTMLElement | null | undefined;
   } = {},
 ): PreviewPanelInlineSize {
   const maxWidth = useViewportClampedMaxWidth(hostRef, options.enabled ?? true, options.container);
   return useResizableWidth({
     storageKey: options.widthStorageKey ?? PREVIEW_PANEL_WIDTH_STORAGE_KEY,
-    defaultWidth: options.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH,
+    defaultWidth: options.fill
+      ? maxWidth - (FILL_SIBLING_COLUMN_WIDTH - SIBLING_COLUMN_MIN_WIDTH)
+      : (options.defaultWidth ?? PREVIEW_PANEL_DEFAULT_WIDTH),
     minWidth: PREVIEW_PANEL_MIN_WIDTH,
     maxWidth,
     edge: "left",
