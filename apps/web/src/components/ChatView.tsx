@@ -3355,8 +3355,8 @@ export default function ChatView(props: ChatViewProps) {
         type: "success",
         title:
           reloaded === 0
-            ? "No loaded tabs to reload"
-            : `Reloaded ${reloaded} browser ${reloaded === 1 ? "tab" : "tabs"}`,
+            ? "No browser tabs to reload"
+            : `Reloading ${reloaded} browser ${reloaded === 1 ? "tab" : "tabs"}`,
       }),
     );
   };
