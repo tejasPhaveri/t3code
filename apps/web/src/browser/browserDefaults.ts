@@ -1,13 +1,16 @@
 import {
   DEFAULT_BROWSER_PERSISTENCE,
   DEFAULT_BROWSER_PROFILE_ID,
+  DEFAULT_PREVIEW_ZOOM_FACTOR,
   resolveBrowserProfileAccents,
   resolveBrowserProfiles,
   type BrowserPersistence,
   type BrowserProfile,
   type DesktopPreviewTabDefaults,
   type PreviewAppearancePreference,
+  type PreviewSessionSnapshot,
   type PreviewViewportSetting,
+  type PreviewZoomFactor,
 } from "@t3tools/contracts";
 
 import {
@@ -20,7 +23,7 @@ import { resolveResponsiveBrowserViewportSize } from "./browserViewportLayout";
 
 export interface BrowserDefaults {
   readonly viewport: PreviewViewportSetting;
-  readonly zoomFactor: number;
+  readonly zoomFactor: PreviewZoomFactor;
   readonly appearance: PreviewAppearancePreference;
   readonly autoShowFloatingPreview: boolean;
   readonly profiles: ReadonlyArray<BrowserProfile>;
@@ -31,7 +34,7 @@ export interface BrowserDefaults {
 
 const toBrowserDefaults = (settings: {
   readonly browserDefaultViewport: PreviewViewportSetting;
-  readonly browserDefaultZoomFactor: number;
+  readonly browserDefaultZoomFactor: PreviewZoomFactor;
   readonly browserDefaultAppearance: PreviewAppearancePreference;
   readonly browserAutoShowFloatingPreview: boolean;
   readonly browserProfiles: ReadonlyArray<BrowserProfile>;
@@ -78,6 +81,23 @@ export function browserDefaultTabState(
   defaults: BrowserDefaults = getBrowserDefaults(),
 ): DesktopPreviewTabDefaults {
   return { zoomFactor: defaults.zoomFactor, colorScheme: defaults.appearance };
+}
+
+/**
+ * How a server tab this app renders natively is shown. The server records zoom and appearance
+ * only once someone sets them, so until then the tab follows the defaults, including later
+ * changes to them. A tab the server renders itself uses the server's own defaults.
+ */
+export function serverTabRendering(
+  snapshot: Pick<PreviewSessionSnapshot, "zoomFactor" | "colorScheme">,
+  rendersNatively: boolean,
+  defaults: Pick<BrowserDefaults, "zoomFactor" | "appearance"> = getBrowserDefaults(),
+): { readonly zoomFactor: PreviewZoomFactor; readonly colorScheme: PreviewAppearancePreference } {
+  return {
+    zoomFactor:
+      snapshot.zoomFactor ?? (rendersNatively ? defaults.zoomFactor : DEFAULT_PREVIEW_ZOOM_FACTOR),
+    colorScheme: snapshot.colorScheme ?? (rendersNatively ? defaults.appearance : "system"),
+  };
 }
 
 export function browserDefaultOpenViewport(

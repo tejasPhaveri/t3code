@@ -18,7 +18,7 @@ import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { readPreviewAnnotationTheme } from "./annotationTheme";
-import { useBrowserDefaults } from "./browserDefaults";
+import { serverTabRendering, useBrowserDefaults } from "./browserDefaults";
 import { useBrowserPointerStore } from "./browserPointerStore";
 import { HostedBrowserWebview } from "./HostedBrowserWebview";
 import { openUrlInPreview } from "./openFileInPreview";
@@ -31,6 +31,7 @@ export function ElectronBrowserHost() {
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   useDesktopHostedPreviewSessions(primaryEnvironmentId);
   const activatedTabIds = useActivatedBrowserTabs();
+  const browserDefaults = useBrowserDefaults();
   const activeSessions = Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
     const threadRef = parseScopedThreadKey(threadKey);
     return threadRef
@@ -135,10 +136,7 @@ export function ElectronBrowserHost() {
             serverDriven={snapshot.runtime === "server"}
             {...(snapshot.runtime === "server"
               ? {
-                  serverRendering: {
-                    colorScheme: snapshot.colorScheme ?? "system",
-                    zoomFactor: snapshot.zoomFactor ?? 1,
-                  },
+                  serverRendering: serverTabRendering(snapshot, true, browserDefaults),
                 }
               : {})}
           />

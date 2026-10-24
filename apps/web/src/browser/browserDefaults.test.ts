@@ -9,7 +9,7 @@ vi.mock("~/hooks/useSettings", () => ({
   ensureClientSettingsHydrated: vi.fn(async () => undefined),
 }));
 
-const { getBrowserDefaults } = await import("./browserDefaults");
+const { getBrowserDefaults, serverTabRendering } = await import("./browserDefaults");
 
 const withDefaultProfile = (browserDefaultProfileId: string) => {
   settings.current = {
@@ -28,5 +28,27 @@ describe("getBrowserDefaults profile resolution", () => {
     expect(withDefaultProfile(INCOGNITO_BROWSER_PROFILE_ID).profileId).toBe(
       DEFAULT_BROWSER_PROFILE_ID,
     );
+  });
+});
+
+describe("serverTabRendering", () => {
+  const defaults = { zoomFactor: 1.25, appearance: "dark" } as const;
+
+  it("follows the defaults until the tab is zoomed or themed", () => {
+    expect(serverTabRendering({}, true, defaults)).toEqual({
+      zoomFactor: 1.25,
+      colorScheme: "dark",
+    });
+    expect(serverTabRendering({ zoomFactor: 0.9, colorScheme: "light" }, true, defaults)).toEqual({
+      zoomFactor: 0.9,
+      colorScheme: "light",
+    });
+  });
+
+  it("leaves a tab the server renders itself on the server's defaults", () => {
+    expect(serverTabRendering({}, false, defaults)).toEqual({
+      zoomFactor: 1,
+      colorScheme: "system",
+    });
   });
 });

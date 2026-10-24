@@ -75,7 +75,11 @@ import {
   commitBrowserViewportChange,
   subscribeBrowserViewportChange,
 } from "~/browser/browserViewportActions";
-import { browserResponsiveViewportForToggle, useBrowserDefaults } from "~/browser/browserDefaults";
+import {
+  browserResponsiveViewportForToggle,
+  serverTabRendering,
+  useBrowserDefaults,
+} from "~/browser/browserDefaults";
 import { BrowserDeviceToolbar } from "~/browser/BrowserDeviceToolbar";
 import { BROWSER_DEVICE_TOOLBAR_HEIGHT } from "~/browser/browserViewportLayout";
 import { useBrowserLayoutZoomFactor } from "~/browser/useBrowserLayoutZoomFactor";
@@ -368,7 +372,8 @@ export function PreviewView({
     updatePreviewServerSnapshot(sessionRef, result.value);
   };
 
-  const serverZoomFactor = snapshot?.zoomFactor ?? DEFAULT_PREVIEW_ZOOM_FACTOR;
+  const serverRendering = serverTabRendering(snapshot ?? {}, nativeServerTab, browserDefaults);
+  const serverZoomFactor = serverRendering.zoomFactor;
   const stepServerZoom = (direction: -1 | 0 | 1) => {
     const index = PREVIEW_ZOOM_LEVELS.indexOf(serverZoomFactor);
     const next =
@@ -1044,7 +1049,7 @@ export function PreviewView({
               }
               colorScheme={
                 serverOwnsRendering
-                  ? (snapshot?.colorScheme ?? "system")
+                  ? serverRendering.colorScheme
                   : (desktopOverlay?.colorScheme ?? "system")
               }
               deviceToolbarVisible={viewport._tag !== "fill"}
