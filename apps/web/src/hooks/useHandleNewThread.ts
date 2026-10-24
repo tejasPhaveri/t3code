@@ -35,6 +35,7 @@ import {
   resolveNewThreadModelSelectionOverride,
 } from "../lib/chatThreadActions";
 import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
+import { useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
@@ -66,7 +67,7 @@ export function useNewThreadHandler() {
     return resolveThreadRouteTarget(currentRouteParams);
   };
 
-  return (
+  const createThread = (
     projectRef: ScopedProjectRef,
     options?: {
       branch?: string | null;
@@ -381,6 +382,15 @@ export function useNewThreadHandler() {
       return { draftId, threadId };
     })();
   };
+
+  // A new chat opens beside the project's shared tabs (browser, terminals, Git Graph).
+  return (...args: Parameters<typeof createThread>) =>
+    createThread(...args).then((created) => {
+      if (created) {
+        useRightPanelStore.getState().show(scopeThreadRef(args[0].environmentId, created.threadId));
+      }
+      return created;
+    });
 }
 
 export function useHandleNewThread() {

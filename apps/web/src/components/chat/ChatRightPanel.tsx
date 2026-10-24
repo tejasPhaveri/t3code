@@ -30,6 +30,8 @@ export function ChatRightPanel(props: ChatRightPanelProps) {
   const inlineSize = usePreviewPanelInlineSize(undefined, {
     container: workspaceLayoutElement,
     widthStorageKey,
+    // Until dragged, the panel takes all the width the chat column can spare.
+    defaultWidth: Number.MAX_SAFE_INTEGER,
   });
   if (!sheet) {
     return <RightPanelTabs {...tabs} mode="inline" maximized={maximized} inlineSize={inlineSize} />;

@@ -1013,17 +1013,22 @@ function RightPanelTab(
       style={{
         transform: CSS.Translate.toString(transform),
         transition,
+        // Profile colors fill every tab, so the active one also gets an outline in its color.
         ...(props.accentColor === undefined
           ? {}
           : {
-              backgroundColor: `color-mix(in srgb, ${props.accentColor} ${props.active ? 32 : 14}%, transparent)`,
+              backgroundColor: `color-mix(in srgb, ${props.accentColor} ${props.active ? 38 : 12}%, transparent)`,
+              ...(props.active ? { boxShadow: `inset 0 0 0 1.5px ${props.accentColor}` } : {}),
             }),
       }}
       className={cn(
         "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
-          ? "bg-accent text-foreground"
+          ? cn(
+              "bg-accent text-foreground",
+              props.accentColor === undefined && "ring-1 ring-inset ring-foreground/35",
+            )
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
         isDragging && "relative z-10",
       )}
