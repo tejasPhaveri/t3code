@@ -166,7 +166,7 @@ import {
 } from "../browser/browserScope";
 import { BrowserPersistenceTitlebarControl } from "../browser/BrowserPersistenceTitlebarControl";
 import { useGitGraphProjectState, useGitGraphProjectStore } from "./gitGraph/gitGraphProjectStore";
-import { useSharedTabOrderStore } from "../sharedTabOrder";
+import { takeCarriedActiveTab, useSharedTabOrderStore } from "../sharedTabOrder";
 import { canReloadBrowserTabs, reloadBrowserTabs } from "../browser/reloadBrowserTabs";
 import {
   browserProjectSetupKey,
@@ -1802,7 +1802,14 @@ export default function ChatView(props: ChatViewProps) {
     useSharedTabOrderStore
       .getState()
       .include(activeScopedProjectKey, activeThreadRef.threadId, rightPanelState.surfaces);
-    useRightPanelStore.getState().applySharedTabOrder(activeThreadRef, sharedTabOrder ?? []);
+    const panel = useRightPanelStore.getState();
+    panel.applySharedTabOrder(activeThreadRef, sharedTabOrder ?? []);
+    const carried = takeCarriedActiveTab(
+      scopedThreadKey(activeThreadRef),
+      activeThreadRef.threadId,
+      rightPanelState.surfaces,
+    );
+    if (carried !== null) panel.activateSurface(activeThreadRef, carried);
   }, [activeThreadRef, activeScopedProjectKey, sharedTabOrder, rightPanelState.surfaces]);
   const openGitGraph = () => {
     if (!activeThreadRef || activeScopedProjectKey === null) return;

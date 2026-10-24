@@ -159,7 +159,11 @@ vi.mock("../lib/chatThreadActions", async (importOriginal) => ({
   resolveNewThreadModelSelectionOverride: () => null,
 }));
 vi.mock("../rightPanelStore", () => ({
-  useRightPanelStore: { getState: () => ({ show: () => undefined }) },
+  useRightPanelStore: { getState: () => ({ byThreadKey: {}, show: () => undefined }) },
+}));
+vi.mock("../sharedTabOrder", () => ({
+  carryActiveSharedTab: () => undefined,
+  sharedSurfaceKey: () => null,
 }));
 vi.mock("../lib/t3ProjectFileDefaults", () => ({
   readT3ProjectFile: () => testState.projectFileRead,

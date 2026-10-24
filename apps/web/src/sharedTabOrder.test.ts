@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { RightPanelSurface } from "./rightPanelStore";
-import { applySharedTabOrder, includeSharedTabs, recordSharedTabOrder } from "./sharedTabOrder";
+import {
+  applySharedTabOrder,
+  carryActiveSharedTab,
+  includeSharedTabs,
+  recordSharedTabOrder,
+  sharedSurfaceKey,
+  takeCarriedActiveTab,
+} from "./sharedTabOrder";
 
 const browser = (tabId: string): RightPanelSurface => ({
   id: `browser:${tabId}`,
@@ -58,5 +65,16 @@ describe("shared tab order", () => {
       "browser:tab_9",
     ]);
     expect(includeSharedTabs(order, "A", [browser("tab_1")])).toBe(order);
+  });
+
+  it("opens a new chat on the tab the chat it came from was showing", () => {
+    // Chat A was showing its own terminal; the new chat B sees it by reference.
+    carryActiveSharedTab("env:B", sharedSurfaceKey("A", ownTerminal("t1"))!);
+
+    expect(takeCarriedActiveTab("env:B", "B", [diff])).toBeNull();
+    expect(takeCarriedActiveTab("env:B", "B", [browser("tab_1"), sharedTerminal("A", "t1")])).toBe(
+      "terminal:A:t1",
+    );
+    expect(takeCarriedActiveTab("env:B", "B", [sharedTerminal("A", "t1")])).toBeNull();
   });
 });

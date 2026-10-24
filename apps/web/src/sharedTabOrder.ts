@@ -12,7 +12,7 @@ const MAX_ORDER_LENGTH = 300;
  * Identity of a tab every chat in the project shows, the same in each chat; null for a
  * chat's own tabs. A terminal is shown in its owner by plain id and elsewhere by reference.
  */
-function sharedSurfaceKey(threadId: string, surface: RightPanelSurface): string | null {
+export function sharedSurfaceKey(threadId: string, surface: RightPanelSurface): string | null {
   switch (surface.kind) {
     case "preview":
       return surface.resourceId === null ? null : surface.id;
@@ -70,6 +70,29 @@ export function includeSharedTabs(
     return key === null || known.has(key) ? [] : [key];
   });
   return added.length === 0 ? order : [...order, ...added].slice(-MAX_ORDER_LENGTH);
+}
+
+// Which shared tab a just-created chat should show once its tabs arrive. Session-only:
+// a restart has no chat being created.
+const pendingActiveKeyByThreadKey = new Map<string, string>();
+
+/** The new chat shows the shared tab the chat it was created from was showing. */
+export function carryActiveSharedTab(newThreadKey: string, key: string): void {
+  pendingActiveKeyByThreadKey.set(newThreadKey, key);
+}
+
+/** The surface a new chat should switch to now that it has it, consuming the request. */
+export function takeCarriedActiveTab(
+  threadKey: string,
+  threadId: string,
+  surfaces: readonly RightPanelSurface[],
+): string | null {
+  const key = pendingActiveKeyByThreadKey.get(threadKey);
+  if (key === undefined) return null;
+  const surface = surfaces.find((candidate) => sharedSurfaceKey(threadId, candidate) === key);
+  if (!surface) return null;
+  pendingActiveKeyByThreadKey.delete(threadKey);
+  return surface.id;
 }
 
 interface SharedTabOrderStoreState {

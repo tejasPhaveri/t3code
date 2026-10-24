@@ -1,5 +1,6 @@
 import {
   scopedProjectKey,
+  scopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
@@ -36,6 +37,7 @@ import {
 } from "../lib/chatThreadActions";
 import { readT3ProjectFile } from "../lib/t3ProjectFileDefaults";
 import { useRightPanelStore } from "../rightPanelStore";
+import { carryActiveSharedTab, sharedSurfaceKey } from "../sharedTabOrder";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
@@ -383,14 +385,36 @@ export function useNewThreadHandler() {
     })();
   };
 
-  // A new chat opens beside the project's shared tabs (browser, terminals, Git Graph).
-  return (...args: Parameters<typeof createThread>) =>
-    createThread(...args).then((created) => {
+  const currentThreadRef = () => {
+    const target = getCurrentRouteTarget();
+    if (target?.kind === "server") return target.threadRef;
+    const draft = target ? useComposerDraftStore.getState().getDraftSession(target.draftId) : null;
+    return draft ? scopeThreadRef(draft.environmentId, draft.threadId) : null;
+  };
+
+  // A new chat opens beside the project's shared tabs (browser, terminals, Git Graph),
+  // on the one the chat it came from was showing.
+  return (...args: Parameters<typeof createThread>) => {
+    const sourceRef = currentThreadRef();
+    const sourcePanel = sourceRef
+      ? useRightPanelStore.getState().byThreadKey[scopedThreadKey(sourceRef)]
+      : undefined;
+    const sourceSurface = sourcePanel?.surfaces.find(
+      (surface) => surface.id === sourcePanel.activeSurfaceId,
+    );
+    const sourceKey =
+      sourceRef && sourceSurface ? sharedSurfaceKey(sourceRef.threadId, sourceSurface) : null;
+    return createThread(...args).then((created) => {
       if (created) {
-        useRightPanelStore.getState().show(scopeThreadRef(args[0].environmentId, created.threadId));
+        const ref = scopeThreadRef(args[0].environmentId, created.threadId);
+        if (sourceKey !== null && created.threadId !== sourceRef?.threadId) {
+          carryActiveSharedTab(scopedThreadKey(ref), sourceKey);
+        }
+        useRightPanelStore.getState().show(ref);
       }
       return created;
     });
+  };
 }
 
 export function useHandleNewThread() {
