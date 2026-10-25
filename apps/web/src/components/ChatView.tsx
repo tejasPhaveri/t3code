@@ -1146,8 +1146,10 @@ export default function ChatView(props: ChatViewProps) {
     ),
   );
 
+  // While the panel has its own window, that window keeps its tabs. Reconciling them here too
+  // would race its writes: each window reloads the other's, so a stale pass here undoes a drag.
   useEffect(() => {
-    if (!activeThreadRef || !previewSessionsReady) return;
+    if (!activeThreadRef || !previewSessionsReady || rightPanelDetached) return;
     const hiddenTabIds = new Set(
       Object.values(activePreviewState.sessions)
         .filter((session) => session.runtime === "server" && session.reveal === false)
@@ -1165,11 +1167,17 @@ export default function ChatView(props: ChatViewProps) {
         ],
         hiddenTabIds,
       );
-  }, [activePreviewState.sessions, activeThreadRef, previewSessionsReady, sharedPreviewTabKey]);
+  }, [
+    activePreviewState.sessions,
+    activeThreadRef,
+    previewSessionsReady,
+    rightPanelDetached,
+    sharedPreviewTabKey,
+  ]);
 
   useEffect(() => {
     // Unknown (not yet loaded or unreadable) must not read as "no shared terminals".
-    if (!activeThreadRef || !terminalSessionsKnown) return;
+    if (!activeThreadRef || !terminalSessionsKnown || rightPanelDetached) return;
     useRightPanelStore.getState().reconcileSharedTerminalSurfaces(
       activeThreadRef,
       sharedTerminalKey
@@ -1180,7 +1188,7 @@ export default function ChatView(props: ChatViewProps) {
           return { ownerThreadId, terminalId };
         }),
     );
-  }, [activeThreadRef, sharedTerminalKey, terminalSessionsKnown]);
+  }, [activeThreadRef, rightPanelDetached, sharedTerminalKey, terminalSessionsKnown]);
 
   useEffect(() => {
     const source = activePreviewMiniPlayer?.source;
@@ -1283,9 +1291,9 @@ export default function ChatView(props: ChatViewProps) {
   const configuredPreviewUrls = getConfiguredPreviewUrls(activeProjectScripts);
 
   useEffect(() => {
-    if (!activeThreadRef || !activeEnvironmentBootstrapComplete) return;
+    if (!activeThreadRef || !activeEnvironmentBootstrapComplete || rightPanelDetached) return;
     useRightPanelStore.getState().reconcileFileSurfaces(activeThreadRef, activeProject !== null);
-  }, [activeEnvironmentBootstrapComplete, activeProject, activeThreadRef]);
+  }, [activeEnvironmentBootstrapComplete, activeProject, activeThreadRef, rightPanelDetached]);
 
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   useEffect(() => {
@@ -1855,15 +1863,15 @@ export default function ChatView(props: ChatViewProps) {
     : null;
   const gitGraphOpen = useGitGraphProjectState(activeScopedProjectKey).open;
   useEffect(() => {
-    if (!activeThreadRef) return;
+    if (!activeThreadRef || rightPanelDetached) return;
     useRightPanelStore.getState().reconcileGitGraphSurface(activeThreadRef, gitGraphOpen);
-  }, [activeThreadRef, gitGraphOpen]);
+  }, [activeThreadRef, gitGraphOpen, rightPanelDetached]);
   const sharedTabOrder = useSharedTabOrderStore((state) =>
     activeScopedProjectKey === null ? undefined : state.byProjectKey[activeScopedProjectKey],
   );
   // Runs after the reconcilers above, so tabs another chat just added land in the project order.
   useEffect(() => {
-    if (!activeThreadRef || activeScopedProjectKey === null) return;
+    if (!activeThreadRef || activeScopedProjectKey === null || rightPanelDetached) return;
     // Including a new tab updates the order, which runs this again to sort it.
     useSharedTabOrderStore
       .getState()
@@ -1876,7 +1884,13 @@ export default function ChatView(props: ChatViewProps) {
       rightPanelState.surfaces,
     );
     if (carried !== null) panel.activateSurface(activeThreadRef, carried);
-  }, [activeThreadRef, activeScopedProjectKey, sharedTabOrder, rightPanelState.surfaces]);
+  }, [
+    activeThreadRef,
+    activeScopedProjectKey,
+    rightPanelDetached,
+    sharedTabOrder,
+    rightPanelState.surfaces,
+  ]);
   const openGitGraph = () => {
     if (!activeThreadRef || activeScopedProjectKey === null) return;
     useGitGraphProjectStore.getState().update(activeScopedProjectKey, { open: true });
