@@ -34,6 +34,8 @@ import {
   useThreadRecentHistory,
 } from "~/browserHistoryStore";
 import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
+import { isPanelWindow } from "~/panelWindow";
+import { forwardAnnotationToMainWindow } from "~/panelWindowAnnotations";
 import { capturePreviewAnnotationScreenshot } from "~/lib/previewAnnotation";
 import { ensureLocalApi } from "~/localApi";
 import { getClientSettings, updateClientSettings } from "~/hooks/useSettings";
@@ -869,7 +871,6 @@ export function PreviewView({
       const capture = capturePreviewAnnotationScreenshot(picked);
       const cropDropped = screenshotFailed || capture.status === "failed";
       const annotation = capture.status === "failed" ? { ...picked, screenshot: null } : picked;
-      addPreviewAnnotation(threadRef, annotation);
       if (cropDropped) {
         toastManager.add(
           stackedThreadToast({
@@ -892,13 +893,18 @@ export function PreviewView({
               file: screenshotFile,
             } satisfies ComposerImageAttachment)
           : null;
+      const send =
+        submission === "send" &&
+        readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope);
+      if (isPanelWindow) {
+        forwardAnnotationToMainWindow({ threadRef, annotation, image, send });
+        return;
+      }
+      addPreviewAnnotation(threadRef, annotation);
       if (image) {
         addImage(threadRef, image);
       }
-      if (
-        submission === "send" &&
-        readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)
-      ) {
+      if (send) {
         onSendAnnotation?.(annotation, image);
       }
     }).then(finishPick);

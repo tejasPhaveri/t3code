@@ -181,6 +181,7 @@ import {
 } from "../browser/browserScope";
 import { BrowserPersistenceTitlebarControl } from "../browser/BrowserPersistenceTitlebarControl";
 import { openUrlInPreview } from "../browser/openFileInPreview";
+import { registerAnnotationSender } from "../panelWindowAnnotations";
 import { useGitGraphProjectState, useGitGraphProjectStore } from "./gitGraph/gitGraphProjectStore";
 import {
   followSharedActiveTab,
@@ -3375,6 +3376,10 @@ export default function ChatView(props: ChatViewProps) {
     void onSend(undefined, "auto", "foreground", { annotation, image });
   };
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
+  useEffect(() => {
+    if (isPanelWindow || activeThreadKey === null) return;
+    return registerAnnotationSender(activeThreadKey, sendPreviewAnnotationStable);
+  }, [activeThreadKey, sendPreviewAnnotationStable]);
   const onComposerResumeStable = useStableCallback(onResume);
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
   const queuedRunsControl =

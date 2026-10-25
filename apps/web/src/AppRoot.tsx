@@ -10,6 +10,7 @@ import { BrowserSessionRestorer } from "./browser/BrowserSessionRestorer";
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
 import { installCrossWindowStoreSync } from "./crossWindowStores";
+import { installPanelWindowAnnotationForwarding } from "./panelWindowAnnotations";
 import { isPanelWindow } from "./panelWindow";
 import { appAtomRegistry, AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
@@ -31,6 +32,7 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
     [],
   );
   useEffect(() => installCrossWindowStoreSync(), []);
+  useEffect(() => installPanelWindowAnnotationForwarding(), []);
   return (
     <AppAtomRegistryProvider>
       <RouterProvider router={router} />
