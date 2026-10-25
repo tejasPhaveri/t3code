@@ -24,6 +24,17 @@ const DesktopSettingsPatch = Schema.Struct({
     ),
   ),
   mainWindowMaximized: Schema.optionalKey(Schema.Boolean),
+  panelWindowBounds: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        x: Schema.Number,
+        y: Schema.Number,
+        width: Schema.Number,
+        height: Schema.Number,
+      }),
+    ),
+  ),
+  panelWindowOpen: Schema.optionalKey(Schema.Boolean),
   serverExposureMode: Schema.optionalKey(Schema.Literals(["local-only", "network-accessible"])),
   tailscaleServeEnabled: Schema.optionalKey(Schema.Boolean),
   tailscaleServePort: Schema.optionalKey(Schema.Number),
@@ -146,6 +157,8 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
           mainWindowMaximized: false,
+          panelWindowBounds: null,
+          panelWindowOpen: false,
           serverExposureMode: "network-accessible",
           tailscaleServeEnabled: true,
           tailscaleServePort: 8443,
@@ -199,6 +212,31 @@ describe("DesktopSettings", () => {
     ),
   );
 
+  it.effect("remembers where the panel window was and that it was open", () =>
+    withSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+
+        // Smaller than the main window may be.
+        yield* settings.setPanelWindowBounds({ x: 1600, y: -200, width: 520, height: 700 });
+        yield* settings.setPanelWindowOpen(true);
+
+        const persisted = yield* decodeDesktopSettingsPatch(
+          yield* fileSystem.readFileString(environment.desktopSettingsPath),
+        );
+        assert.deepEqual(persisted, {
+          panelWindowBounds: { x: 1600, y: -200, width: 520, height: 700 },
+          panelWindowOpen: true,
+        } satisfies typeof DesktopSettingsPatch.Type);
+        const loaded = yield* settings.load;
+        assert.deepEqual(loaded.panelWindowBounds, { x: 1600, y: -200, width: 520, height: 700 });
+        assert.isTrue(loaded.panelWindowOpen);
+      }),
+    ),
+  );
+
   it.effect("saves through a symlinked settings file without replacing the link", () =>
     withSettings(
       Effect.gen(function* () {
@@ -241,6 +279,8 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
           mainWindowMaximized: false,
+          panelWindowBounds: null,
+          panelWindowOpen: false,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,
@@ -270,6 +310,8 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
           mainWindowMaximized: false,
+          panelWindowBounds: null,
+          panelWindowOpen: false,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,

@@ -17,6 +17,8 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL, APP_VERSION } from "../branding";
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
+import { PanelWindowLayout } from "../components/PanelWindowLayout";
+import { PanelWindowRouteSync } from "../components/PanelWindowRouteSync";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
@@ -54,6 +56,7 @@ import {
   toastManager,
 } from "../components/ui/toast";
 import { isElectron } from "../env";
+import { isPanelWindow } from "../panelWindow";
 import { cn } from "../lib/utils";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
 import { applyAppearanceContrast } from "~/appearanceContrast";
@@ -215,6 +218,29 @@ function RootRouteView() {
     </CommandPalette>
   );
 
+  // The right panel's own window: the panel and the dialogs it opens. Everything that should
+  // happen once per app, such as notifications, deep links and onboarding, stays in the main window.
+  if (isPanelWindow) {
+    return (
+      <ToastProvider>
+        <AnchoredToastProvider>
+          <DocumentTitleSync />
+          <BrowserChromeThemeSync key={pathname} />
+          <ContrastAppearanceSync />
+          <EnvironmentThemeSync />
+          <GlassAppearanceSync />
+          <FontAppearanceSync />
+          <PanelWindowRouteSync />
+          <ReopenClosedViewShortcut />
+          <ConfirmDialogHost />
+          <PanelWindowLayout>
+            <Outlet />
+          </PanelWindowLayout>
+        </AnchoredToastProvider>
+      </ToastProvider>
+    );
+  }
+
   return (
     <ToastProvider>
       <AnchoredToastProvider>
@@ -254,6 +280,7 @@ function RootRouteView() {
             <EventRouter skipInitialBootstrapNavigation={returningFromWelcome} />
           ) : null}
           {isElectron ? <DesktopUpdateLaunchNotice /> : null}
+          {isElectron ? <PanelWindowRouteSync /> : null}
           {appShell}
           {/* Above the router: a theme draft is judged by walking the app, so the
               editor has to survive navigation away from settings. */}

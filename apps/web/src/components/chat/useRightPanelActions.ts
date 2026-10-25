@@ -6,6 +6,7 @@ import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-action
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { resolveExplicitDiffOpenOnActivate } from "../ChatView.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { isPanelWindow, setRightPanelDetached, useRightPanelDetached } from "../../panelWindow";
 import { type ScopedThreadRef, type RunId } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { type SetStateAction, useEffect } from "react";
@@ -229,8 +230,14 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     }
   };
   const activateRightPanelSurfaceStable = useStableCallback(activateRightPanelSurface);
+  const rightPanelDetached = useRightPanelDetached();
   const toggleRightPanel = () => {
-    if (!activeThreadRef) return;
+    if (!activeThreadRef || isPanelWindow) return;
+    // The panel's own window keeps it; toggling from the main window brings that window forward.
+    if (rightPanelDetached) {
+      setRightPanelDetached(true);
+      return;
+    }
     if (rightPanelOpen) {
       closePreviewPanel();
       return;

@@ -21,6 +21,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import {
   MENU_ACTION_CHANNEL,
+  PANEL_WINDOW_OPEN_CHANNEL,
   QUIT_SHORTCUT_CHANNEL,
   SNAP_SHOT_EVENT_CHANNEL,
   TRACKPAD_SCROLL_END_CHANNEL,
@@ -87,6 +88,12 @@ export type DesktopWindowError =
   | PreviewManager.PreviewManagerError;
 
 export type MainWindowZoomDirection = "in" | "out" | "reset";
+type AppWindowRole = "main" | "panel";
+
+/** The renderer reads this to render only the right panel. Hash routing leaves the query alone. */
+const PANEL_WINDOW_QUERY = "t3window";
+const DEFAULT_PANEL_WINDOW_SIZE = { width: 1000, height: 820 } as const;
+const PANEL_WINDOW_DISPLAY_MARGIN = 40;
 export type MainWindowContentsCommand = "reload" | "forceReload" | "toggleDevTools";
 
 export class DesktopWindow extends Context.Service<
@@ -115,6 +122,9 @@ export class DesktopWindow extends Context.Service<
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
     readonly runMainContentsCommand: (command: MainWindowContentsCommand) => Effect.Effect<void>;
     readonly syncAppearance: Effect.Effect<void>;
+    /** Whether the right panel is in its own window. */
+    readonly panelWindowOpen: Effect.Effect<boolean>;
+    readonly setPanelWindowOpen: (open: boolean) => Effect.Effect<void, DesktopWindowError>;
   }
 >()("@t3tools/desktop/window/DesktopWindow") {}
 
@@ -174,6 +184,71 @@ export function resolveInitialMainWindowBounds(
     return persistedBounds;
   }
   return DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE;
+}
+
+function centerOf(bounds: DisplayBounds): { readonly x: number; readonly y: number } {
+  return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+}
+
+function displayContains(
+  display: DisplayBounds,
+  point: { readonly x: number; readonly y: number },
+) {
+  return (
+    point.x >= display.x &&
+    point.x < display.x + display.width &&
+    point.y >= display.y &&
+    point.y < display.y + display.height
+  );
+}
+
+/**
+ * Where the panel window opens: where the user left it, or else centred on a display the main
+ * window is not on, since the point of the window is to put the panel on another screen.
+ */
+export function resolveInitialPanelWindowBounds(
+  persistedBounds: DesktopAppSettings.DesktopPanelWindowBounds | null,
+  workAreas: readonly DisplayBounds[],
+  mainBounds: DisplayBounds | null,
+): DesktopAppSettings.DesktopPanelWindowBounds | typeof DEFAULT_PANEL_WINDOW_SIZE {
+  if (
+    persistedBounds !== null &&
+    workAreas.some((display) => windowFitsWithinDisplay(persistedBounds, display))
+  ) {
+    return persistedBounds;
+  }
+  const mainCenter = mainBounds === null ? null : centerOf(mainBounds);
+  const display =
+    (mainCenter === null
+      ? undefined
+      : workAreas.find((area) => !displayContains(area, mainCenter))) ?? workAreas[0];
+  if (display === undefined) return DEFAULT_PANEL_WINDOW_SIZE;
+  const width = Math.max(
+    DesktopAppSettings.MIN_PANEL_WINDOW_SIZE.width,
+    Math.min(DEFAULT_PANEL_WINDOW_SIZE.width, display.width - PANEL_WINDOW_DISPLAY_MARGIN * 2),
+  );
+  const height = Math.max(
+    DesktopAppSettings.MIN_PANEL_WINDOW_SIZE.height,
+    display.height - PANEL_WINDOW_DISPLAY_MARGIN * 2,
+  );
+  return {
+    x: Math.round(display.x + (display.width - width) / 2),
+    y: Math.round(display.y + (display.height - height) / 2),
+    width,
+    height,
+  };
+}
+
+/** Opens the panel window on the chat the main window shows. */
+export function resolvePanelWindowUrl(applicationUrl: string, mainUrl: string | null): string {
+  const url = new URL(applicationUrl);
+  url.searchParams.set(PANEL_WINDOW_QUERY, "panel");
+  if (mainUrl !== null) {
+    try {
+      url.hash = new URL(mainUrl).hash;
+    } catch {}
+  }
+  return url.href;
 }
 
 function buildConnectingSplashDataUrl(shouldUseDarkColors: boolean): string {
@@ -307,6 +382,10 @@ export const make = Effect.gen(function* () {
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
   let flushMainWindowBounds: Effect.Effect<void> = Effect.void;
+  let flushPanelWindowBounds: Effect.Effect<void> = Effect.void;
+  let panelWindow: Electron.BrowserWindow | undefined;
+  // Set while the main window takes the panel window down with it, so the panel reopens with it.
+  let closingPanelWithMain = false;
 
   const dismissConnectingSplash = Effect.gen(function* () {
     const splash = yield* Ref.getAndSet(splashWindowRef, Option.none());
@@ -320,14 +399,16 @@ export const make = Effect.gen(function* () {
   // registered via setMain, so it must be treated as "no real main window" --
   // otherwise ensureMain/activate/dispatchMenuAction latch onto it and never
   // open (or retry) the real main.
-  const withoutSplash = (window: Option.Option<Electron.BrowserWindow>) =>
-    Ref.get(splashWindowRef).pipe(
-      Effect.map((splash) =>
-        Option.isSome(splash) && Option.isSome(window) && window.value === splash.value
-          ? Option.none<Electron.BrowserWindow>()
-          : window,
-      ),
-    );
+  // Likewise the panel window: menu actions and deep links belong to the main window's chat.
+  const withoutSplash = Effect.fn("desktop.window.withoutSplash")(function* (
+    window: Option.Option<Electron.BrowserWindow>,
+  ) {
+    if (Option.isSome(window) && window.value === panelWindow) return yield* electronWindow.main;
+    const splash = yield* Ref.get(splashWindowRef);
+    return Option.isSome(splash) && Option.isSome(window) && window.value === splash.value
+      ? Option.none<Electron.BrowserWindow>()
+      : window;
+  });
 
   const currentMainWindow = electronWindow.currentMainOrFirst.pipe(Effect.flatMap(withoutSplash));
   const focusedMainWindow = electronWindow.focusedMainOrFirst.pipe(Effect.flatMap(withoutSplash));
@@ -347,23 +428,34 @@ export const make = Effect.gen(function* () {
     yield* previewManager.reapplyZoom();
   });
 
-  const createWindow = Effect.fn("desktop.window.createWindow")(function* (): Effect.fn.Return<
-    Option.Option<Electron.BrowserWindow>,
-    DesktopWindowError
-  > {
+  const createWindow = Effect.fn("desktop.window.createWindow")(function* (
+    role: AppWindowRole,
+  ): Effect.fn.Return<Option.Option<Electron.BrowserWindow>, DesktopWindowError> {
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
     yield* previewManager.getBrowserSession();
+    const isPanel = role === "panel";
     const applicationUrl = getDesktopUrl(environment.isDevelopment);
+    const mainWindow = isPanel ? yield* electronWindow.main : Option.none<Electron.BrowserWindow>();
+    const windowUrl = isPanel
+      ? resolvePanelWindowUrl(
+          applicationUrl,
+          Option.getOrNull(Option.map(mainWindow, (main) => main.webContents.getURL())),
+        )
+      : applicationUrl;
+    const windowTitle = isPanel ? `${environment.displayName} Panel` : environment.displayName;
     const iconPaths = yield* assets.iconPaths;
     const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
     const persistedSettings = yield* desktopSettings.get;
-    const persistedBounds = persistedSettings.mainWindowBounds;
+    const persistedBounds = isPanel
+      ? persistedSettings.panelWindowBounds
+      : persistedSettings.mainWindowBounds;
     const displayBoundsResult = yield* Effect.sync(() => {
       try {
+        const displays = Electron.screen.getAllDisplays();
         return {
           _tag: "Success" as const,
-          bounds: Electron.screen.getAllDisplays().map((display) => display.bounds),
+          bounds: displays.map((display) => (isPanel ? display.workArea : display.bounds)),
         };
       } catch (cause) {
         return { _tag: "Failure" as const, cause };
@@ -375,22 +467,32 @@ export const make = Effect.gen(function* () {
         : yield* logWindowWarning("failed to read connected displays; using defaults", {
             cause: displayBoundsResult.cause,
           }).pipe(Effect.as<readonly Electron.Rectangle[]>([]));
-    const initialBounds = resolveInitialMainWindowBounds(persistedBounds, displayBounds);
+    const initialBounds = isPanel
+      ? resolveInitialPanelWindowBounds(
+          persistedSettings.panelWindowBounds,
+          displayBounds,
+          Option.getOrNull(Option.map(mainWindow, (main) => main.getBounds())),
+        )
+      : resolveInitialMainWindowBounds(persistedBounds, displayBounds);
     const restoredPersistedBounds = persistedBounds !== null && initialBounds === persistedBounds;
-    if (persistedBounds !== null && initialBounds === DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE) {
+    if (
+      !isPanel &&
+      persistedBounds !== null &&
+      initialBounds === DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE
+    ) {
       yield* logWindowWarning("saved main window bounds could not be restored; using defaults");
     }
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
     const window = yield* electronWindow.create({
       ...initialBounds,
-      minWidth: 840,
-      minHeight: 620,
+      minWidth: isPanel ? DesktopAppSettings.MIN_PANEL_WINDOW_SIZE.width : 840,
+      minHeight: isPanel ? DesktopAppSettings.MIN_PANEL_WINDOW_SIZE.height : 620,
       show: false,
       autoHideMenuBar: true,
       ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
       backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
       ...iconOption,
-      title: environment.displayName,
+      title: windowTitle,
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
       webPreferences: {
         preload: environment.preloadPath,
@@ -429,15 +531,18 @@ export const make = Effect.gen(function* () {
         window.isFullScreen() || window.isMaximized() || window.isMinimized()
           ? window.getNormalBounds()
           : window.getBounds();
-      return DesktopAppSettings.normalizeMainWindowBounds({
+      const rounded = {
         x: Math.round(bounds.x),
         y: Math.round(bounds.y),
         width: Math.round(bounds.width),
         height: Math.round(bounds.height),
-      });
+      };
+      return isPanel
+        ? DesktopAppSettings.normalizePanelWindowBounds(rounded)
+        : DesktopAppSettings.normalizeMainWindowBounds(rounded);
     };
     const fallbackWindowBounds = boundsPersistenceEnabled ? null : readPersistableBounds();
-    const fallbackWindowMaximized = persistedSettings.mainWindowMaximized;
+    const fallbackWindowMaximized = !isPanel && persistedSettings.mainWindowMaximized;
     const persistCurrentBounds = (): Fiber.Fiber<void, never> | undefined => {
       if (!boundsPersistenceEnabled) {
         return pendingBoundsPersistFiber;
@@ -447,7 +552,10 @@ export const make = Effect.gen(function* () {
         return pendingBoundsPersistFiber;
       }
       pendingBoundsPersistFiber = runFork(
-        desktopSettings.setMainWindowBounds(bounds, window.isMaximized()).pipe(
+        (isPanel
+          ? desktopSettings.setPanelWindowBounds(bounds)
+          : desktopSettings.setMainWindowBounds(bounds, window.isMaximized())
+        ).pipe(
           Effect.asVoid,
           Effect.catch((error) =>
             logWindowWarning("failed to persist main window bounds", {
@@ -503,9 +611,10 @@ export const make = Effect.gen(function* () {
         fiber === undefined ? Effect.void : Fiber.join(fiber).pipe(Effect.asVoid),
       ),
     );
-    flushMainWindowBounds = flushBoundsPersist;
+    if (isPanel) flushPanelWindowBounds = flushBoundsPersist;
+    else flushMainWindowBounds = flushBoundsPersist;
 
-    yield* previewManager.setMainWindow(window);
+    yield* isPanel ? previewManager.addHostWindow(window) : previewManager.setMainWindow(window);
     if (yield* Ref.get(desktopState.quitting)) {
       yield* electronWindow.destroyAll;
       return Option.none();
@@ -683,7 +792,7 @@ export const make = Effect.gen(function* () {
 
     window.on("page-title-updated", (event) => {
       event.preventDefault();
-      window.setTitle(environment.displayName);
+      window.setTitle(windowTitle);
     });
     window.on("resize", scheduleBoundsPersist);
     window.on("move", scheduleBoundsPersist);
@@ -718,7 +827,7 @@ export const make = Effect.gen(function* () {
       if (window.isDestroyed()) {
         return;
       }
-      void window.loadURL(applicationUrl).catch(() => undefined);
+      void window.loadURL(windowUrl).catch(() => undefined);
     };
     const scheduleDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber !== undefined || window.isDestroyed()) {
@@ -758,7 +867,7 @@ export const make = Effect.gen(function* () {
       }
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
-      window.setTitle(environment.displayName);
+      window.setTitle(windowTitle);
       if (environment.platform === "darwin") syncMacosWindowButtons(window);
     });
     window.webContents.on(
@@ -831,6 +940,10 @@ export const make = Effect.gen(function* () {
       if (!window.isDestroyed()) {
         window.webContents.setBackgroundThrottling(true);
       }
+      if (isPanel) {
+        if (!window.isDestroyed()) window.show();
+        return;
+      }
       if (persistedSettings.mainWindowMaximized) {
         window.maximize();
       }
@@ -838,24 +951,79 @@ export const make = Effect.gen(function* () {
     });
 
     loadApplication();
-    if (environment.isDevelopment) {
+    if (environment.isDevelopment && !isPanel) {
       window.webContents.openDevTools({ mode: "detach" });
     }
 
     window.on("closed", () => {
       clearDevelopmentLoadRetry();
       clearBoundsPersist();
-      void runPromise(electronWindow.clearMain(Option.some(window)));
+      if (!isPanel) void runPromise(electronWindow.clearMain(Option.some(window)));
     });
 
     return Option.some(window);
   });
 
+  const broadcastPanelWindowOpen = Effect.fn("desktop.window.broadcastPanelWindowOpen")(function* (
+    open: boolean,
+  ) {
+    yield* electronWindow.sendAll(PANEL_WINDOW_OPEN_CHANNEL, open);
+  });
+
+  const openPanelWindow = Effect.gen(function* () {
+    if (panelWindow !== undefined && !panelWindow.isDestroyed()) {
+      yield* electronWindow.reveal(panelWindow);
+      return;
+    }
+    if (Option.isNone(yield* electronWindow.main)) return;
+    const created = yield* createWindow("panel");
+    if (Option.isNone(created)) return;
+    const window = created.value;
+    panelWindow = window;
+    window.once("closed", () => {
+      if (panelWindow === window) panelWindow = undefined;
+      const keepOpenForNextLaunch = closingPanelWithMain;
+      closingPanelWithMain = false;
+      runFork(
+        Effect.gen(function* () {
+          yield* broadcastPanelWindowOpen(false);
+          if (keepOpenForNextLaunch || (yield* Ref.get(desktopState.quitting))) return;
+          yield* desktopSettings.setPanelWindowOpen(false);
+        }).pipe(
+          Effect.catch((error) =>
+            logWindowWarning("failed to persist the closed panel window", {
+              message: error.message,
+            }),
+          ),
+        ),
+      );
+    });
+    yield* broadcastPanelWindowOpen(true);
+    yield* desktopSettings
+      .setPanelWindowOpen(true)
+      .pipe(
+        Effect.catch((error) =>
+          logWindowWarning("failed to persist the open panel window", { message: error.message }),
+        ),
+      );
+    yield* logWindowInfo("panel window created");
+  }).pipe(Effect.withSpan("desktop.window.openPanelWindow"));
+
   const createMain = Effect.gen(function* () {
-    const window = yield* createWindow();
+    const window = yield* createWindow("main");
     if (Option.isSome(window)) {
-      yield* electronWindow.setMain(window.value);
+      const main = window.value;
+      yield* electronWindow.setMain(main);
       yield* logWindowInfo("main window created");
+      // The panel window shows the main window's chat, so it cannot outlive it.
+      main.once("closed", () => {
+        if (panelWindow === undefined || panelWindow.isDestroyed()) return;
+        closingPanelWithMain = true;
+        panelWindow.close();
+      });
+      if ((yield* desktopSettings.get).panelWindowOpen) {
+        yield* openPanelWindow;
+      }
     }
     return window;
   }).pipe(Effect.withSpan("desktop.window.createMain"));
@@ -1008,9 +1176,9 @@ export const make = Effect.gen(function* () {
     handleBackendNotReady: Ref.set(backendReadyRef, false).pipe(
       Effect.withSpan("desktop.window.handleBackendNotReady"),
     ),
-    flushMainWindowBounds: Effect.suspend(() => flushMainWindowBounds).pipe(
-      Effect.withSpan("desktop.window.flushMainWindowBounds"),
-    ),
+    flushMainWindowBounds: Effect.suspend(() =>
+      Effect.andThen(flushMainWindowBounds, flushPanelWindowBounds),
+    ).pipe(Effect.withSpan("desktop.window.flushMainWindowBounds")),
     dispatchMenuAction: Effect.fn("desktop.window.dispatchMenuAction")(function* (action, options) {
       yield* Effect.annotateCurrentSpan({ action });
       yield* dispatchRendererEvent(MENU_ACTION_CHANNEL, action, options);
@@ -1049,6 +1217,15 @@ export const make = Effect.gen(function* () {
         syncWindowAppearance(window, shouldUseDarkColors, environment.platform),
       );
     }).pipe(Effect.withSpan("desktop.window.syncAppearance")),
+    panelWindowOpen: Effect.sync(() => panelWindow !== undefined && !panelWindow.isDestroyed()),
+    setPanelWindowOpen: Effect.fn("desktop.window.setPanelWindowOpen")(function* (open) {
+      yield* Effect.annotateCurrentSpan({ open });
+      if (open) {
+        yield* openPanelWindow;
+        return;
+      }
+      if (panelWindow !== undefined && !panelWindow.isDestroyed()) panelWindow.close();
+    }),
   });
 });
 

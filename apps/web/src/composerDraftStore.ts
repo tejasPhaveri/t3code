@@ -145,6 +145,11 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
   });
 }
 
+/** Writes pending draft changes now, for another window about to read them. */
+export function flushComposerDraftStorage(): void {
+  composerDebouncedStorage.flush();
+}
+
 export const PersistedComposerImageAttachment = Schema.Struct({
   id: Schema.String,
   name: Schema.String,

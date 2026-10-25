@@ -10,6 +10,7 @@ import { type ComponentProps, useEffect, useEffectEvent, useState } from "react"
 import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
 import { isElectron } from "~/env";
+import { useRightPanelDetached } from "~/panelWindow";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { useDesktopHostedPreviewSessions } from "~/components/preview/usePreviewSession";
 import { useActivePreviewSessions } from "~/previewStateStore";
@@ -32,6 +33,8 @@ export function ElectronBrowserHost() {
   useDesktopHostedPreviewSessions(primaryEnvironmentId);
   const activatedTabIds = useActivatedBrowserTabs();
   const browserDefaults = useBrowserDefaults();
+  // A page lives in one window at a time: while the panel has its own window, it hosts them.
+  const panelDetached = useRightPanelDetached();
   const activeSessions = Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
     const threadRef = parseScopedThreadKey(threadKey);
     return threadRef
@@ -101,6 +104,7 @@ export function ElectronBrowserHost() {
 
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: true });
   const onOpenLink = useEffectEvent(({ tabId, url, background }: DesktopPreviewOpenLinkEvent) => {
+    if (panelDetached) return;
     const source = sessions.find((session) => session.runtimeTabId === tabId);
     if (!source) return;
     void openUrlInPreview({
@@ -117,7 +121,7 @@ export function ElectronBrowserHost() {
     return preview.onOpenLink(onOpenLink);
   }, []);
 
-  if (!isElectron) return null;
+  if (!isElectron || panelDetached) return null;
   return (
     <div className="contents" data-electron-browser-host>
       {sessions.map(({ threadRef, snapshot, runtimeTabId, pictureInPicture, zoomFactor }) => {

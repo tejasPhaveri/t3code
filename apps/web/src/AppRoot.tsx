@@ -9,6 +9,8 @@ import { BrowserProfileReporter } from "./browser/BrowserProfileReporter";
 import { BrowserSessionRestorer } from "./browser/BrowserSessionRestorer";
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
+import { installCrossWindowStoreSync } from "./crossWindowStores";
+import { isPanelWindow } from "./panelWindow";
 import { appAtomRegistry, AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
 
@@ -28,12 +30,14 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
       }),
     [],
   );
+  useEffect(() => installCrossWindowStoreSync(), []);
   return (
     <AppAtomRegistryProvider>
       <RouterProvider router={router} />
       <ElectronBrowserHost />
-      <BrowserProfileReporter />
-      <BrowserSessionRestorer />
+      {/* The main window restores and reports for both windows. */}
+      {isPanelWindow ? null : <BrowserProfileReporter />}
+      {isPanelWindow ? null : <BrowserSessionRestorer />}
       <QuitHoldOverlay />
     </AppAtomRegistryProvider>
   );

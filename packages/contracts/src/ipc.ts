@@ -1129,6 +1129,15 @@ export interface DesktopBridge {
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;
   /** App window zoom; older desktop shells omit this method. */
   getWindowZoomFactor?: () => number;
+  /**
+   * The right panel's own window, which a user can move to another display. While it is open
+   * the main window leaves the panel to it. Older desktop shells omit this.
+   */
+  panelWindow?: {
+    isOpen: () => boolean;
+    setOpen: (open: boolean) => Promise<void>;
+    onOpenChange: (listener: (open: boolean) => void) => () => void;
+  };
   getUpdateState: () => Promise<DesktopUpdateState>;
   setUpdateChannel: (channel: DesktopUpdateChannel) => Promise<DesktopUpdateState>;
   checkForUpdate: () => Promise<DesktopUpdateCheckResult>;

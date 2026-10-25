@@ -244,6 +244,14 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+## Put the panel on another display
+
+On desktop, choose **Move panel to its own window** at the top right of the right panel. The panel
+opens in a window you can move to another display, and it follows the chat you open in the main
+window. The window reopens where you left it, including after a restart. Choose **Move panel back
+beside the chat**, or close the window, to return the panel. Browser tabs reload when they move
+between windows; their sign-ins stay.
+
 ## Snooze until later
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your

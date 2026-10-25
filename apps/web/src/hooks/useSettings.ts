@@ -30,6 +30,7 @@ import {
   supportsSharedSettingsSync,
 } from "@t3tools/client-runtime/state/shared-settings";
 import { ensureLocalApi } from "~/localApi";
+import { isElectron } from "~/env";
 import {
   getThemeDefinition,
   getThemePreviewSidebarArtwork,
@@ -174,8 +175,22 @@ async function hydrateClientSettings(): Promise<void> {
   return clientSettingsHydrationPromise;
 }
 
+// The right panel's own window runs a second copy of the app; a change saved in either window
+// reaches the other through this channel rather than waiting for its next load.
+const clientSettingsChannel =
+  isElectron && typeof BroadcastChannel !== "undefined"
+    ? new BroadcastChannel("t3code:client-settings")
+    : null;
+clientSettingsChannel?.addEventListener("message", (event: MessageEvent<unknown>) => {
+  if (typeof event.data !== "object" || event.data === null) return;
+  replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...(event.data as ClientSettings) });
+});
+
 const defaultClientSettingsPersistence = (settings: ClientSettings): Promise<void> =>
-  ensureLocalApi().persistence.setClientSettings(settings);
+  ensureLocalApi()
+    .persistence.setClientSettings(settings)
+    // oxlint-disable-next-line unicorn/require-post-message-target-origin -- A BroadcastChannel takes no target origin.
+    .then(() => clientSettingsChannel?.postMessage(settings));
 
 function enqueueClientSettingsPersistence<A>(work: () => Promise<A>): Promise<A> {
   const result = clientSettingsPersistenceQueue.then(work);

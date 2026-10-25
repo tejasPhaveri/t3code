@@ -254,6 +254,8 @@ function layerTest(input: {
         }
         return { settings: desktopSettings, changed };
       }),
+    setPanelWindowBounds: () => Effect.die("unexpected panel window bounds update"),
+    setPanelWindowOpen: () => Effect.die("unexpected panel window update"),
     setServerExposureMode: () => Effect.die("unexpected server exposure update"),
     setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
     setUpdateChannel: () => Effect.die("unexpected update channel change"),
@@ -469,6 +471,47 @@ describe("DesktopWindow", () => {
     assert.deepEqual(
       DesktopWindow.resolveInitialMainWindowBounds(persistedBounds, [displays[0]!]),
       DesktopAppSettings.DEFAULT_MAIN_WINDOW_SIZE,
+    );
+  });
+
+  it("opens the panel window on a display the main window is not on", () => {
+    const laptop = { x: 0, y: 0, width: 1512, height: 944 };
+    const monitor = { x: 1512, y: -200, width: 2560, height: 1400 };
+    const mainBounds = { x: 100, y: 40, width: 1300, height: 860 };
+
+    assert.deepEqual(
+      DesktopWindow.resolveInitialPanelWindowBounds(null, [laptop, monitor], mainBounds),
+      { x: 2292, y: -160, width: 1000, height: 1320 },
+    );
+    // With one display there is nowhere else to go.
+    assert.deepEqual(DesktopWindow.resolveInitialPanelWindowBounds(null, [laptop], mainBounds), {
+      x: 256,
+      y: 40,
+      width: 1000,
+      height: 864,
+    });
+    const saved = { x: 1600, y: 0, width: 900, height: 1200 };
+    assert.deepEqual(
+      DesktopWindow.resolveInitialPanelWindowBounds(saved, [laptop, monitor], mainBounds),
+      saved,
+    );
+    // A saved spot on an unplugged display falls back to placing the window afresh.
+    assert.deepEqual(DesktopWindow.resolveInitialPanelWindowBounds(saved, [laptop], mainBounds), {
+      x: 256,
+      y: 40,
+      width: 1000,
+      height: 864,
+    });
+  });
+
+  it("opens the panel window on the main window's route", () => {
+    assert.equal(
+      DesktopWindow.resolvePanelWindowUrl("t3code://app/", "t3code://app/#/env-1/thread-1"),
+      "t3code://app/?t3window=panel#/env-1/thread-1",
+    );
+    assert.equal(
+      DesktopWindow.resolvePanelWindowUrl("http://localhost:5733/", null),
+      "http://localhost:5733/?t3window=panel",
     );
   });
 

@@ -107,7 +107,14 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
-import { type SetStateAction, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  type SetStateAction,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -120,6 +127,12 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { isElectron } from "../env";
+import {
+  canDetachRightPanel,
+  isPanelWindow,
+  setRightPanelDetached,
+  useRightPanelDetached,
+} from "../panelWindow";
 import { useDiffPanelStore } from "../diffPanelStore";
 import { useActiveThreadRef } from "../hooks/useActiveThreadRef";
 import { composerRequiresModifier } from "../composer-logic";
@@ -300,6 +313,7 @@ import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
 import {
   PanelLayoutControls,
   type PanelLayoutControlsProps,
+  RightPanelWindowControl,
   ThreadPanelHeaderControl,
   WorkspaceTitlebarControls,
 } from "./chat/PanelLayoutControls";
@@ -683,7 +697,10 @@ export default function ChatView(props: ChatViewProps) {
     window.addEventListener("dragend", clearWorkspaceFileDrag);
     return () => window.removeEventListener("dragend", clearWorkspaceFileDrag);
   }, [isWorkspaceFileDragActive]);
-  const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const narrowRightPanelLayout = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  // The panel's own window is all panel, however narrow.
+  const shouldUsePlanSidebarSheet = narrowRightPanelLayout && !isPanelWindow;
+  const rightPanelDetached = useRightPanelDetached();
   const isMobileViewport = useMediaQuery("max-sm");
   const [workspaceLayoutElement, setWorkspaceLayoutElement] = useState<HTMLDivElement | null>(null);
   const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
@@ -1086,7 +1103,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const canReuseTerminal = activeThreadKnownSessionsRaw !== null;
   const previewPanelOpen = activeRightPanelKind === "preview" && browserAvailable;
-  const rightPanelOpen = rightPanelState.isOpen;
+  const rightPanelOpen = isPanelWindow || (rightPanelState.isOpen && !rightPanelDetached);
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const rightPanelPresenceValue = {
@@ -1106,12 +1123,17 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
-  const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
-    activePreviewMiniPlayer?.source ?? null,
-    renderedRightPanelSurface,
-  );
+  // The mini player shows a page this window hosts, and while detached the panel window hosts them.
+  const previewMiniPlayerVisible =
+    !rightPanelDetached &&
+    shouldRenderPreviewMiniPlayer(
+      activePreviewMiniPlayer?.source ?? null,
+      renderedRightPanelSurface,
+    );
   const canMaximizeRightPanel = rightPanelOpen && !shouldUsePlanSidebarSheet;
-  const rightPanelMaximized = canMaximizeRightPanel && rightPanelState.maximized === true;
+  // The panel window shows the panel alone, as a maximized panel does.
+  const rightPanelMaximized =
+    isPanelWindow || (canMaximizeRightPanel && rightPanelState.maximized === true);
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
   const [threadPanelPresentation, setThreadPanelPresentation] =
     useState<ThreadPanelPresentation>("inline");
@@ -3382,17 +3404,34 @@ export default function ChatView(props: ChatViewProps) {
     threadPanelPopoverHandle,
     threadPanelShortcutLabel: shortcutLabelForCommand(keybindings, "threadPanel.toggle"),
     rightPanelAvailable: activeProject !== null,
-    rightPanelOpen,
+    rightPanelOpen: rightPanelOpen || rightPanelDetached,
     rightPanelShortcutLabel: shortcutLabelForCommand(keybindings, "rightPanel.toggle"),
     onToggleTerminal: toggleTerminalVisibilityStable,
     onToggleThreadPanel: toggleThreadPanelStable,
     onToggleRightPanel: toggleRightPanelStable,
   } satisfies PanelLayoutControlsProps;
-  const panelToggleControls = (
-    <PanelLayoutControls
-      {...panelToggleControlProps}
-      showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
-    />
+  const moveRightPanelToWindow = () => {
+    if (isPanelWindow && activeThreadRef) {
+      // The main window reopens the panel beside the chat it shows.
+      useRightPanelStore.getState().show(activeThreadRef);
+    }
+    setRightPanelDetached(!isPanelWindow);
+  };
+  const rightPanelWindowControl =
+    canDetachRightPanel() && rightPanelOpen ? (
+      <RightPanelWindowControl inPanelWindow={isPanelWindow} onToggle={moveRightPanelToWindow} />
+    ) : null;
+  // The panel window has no chat whose drawer, details or panel to toggle.
+  const panelToggleControls = isPanelWindow ? (
+    rightPanelWindowControl
+  ) : (
+    <>
+      {rightPanelWindowControl}
+      <PanelLayoutControls
+        {...panelToggleControlProps}
+        showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
+      />
+    </>
   );
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
   const browserTabIds = rightPanelState.surfaces.flatMap((surface) =>
@@ -3438,7 +3477,8 @@ export default function ChatView(props: ChatViewProps) {
         state={deviceState}
       />
       {rightPanelControlsAtRoot ? panelLayoutControls : null}
-      <div
+      <ChatColumn
+        omitted={isPanelWindow}
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
           rightPanelMaximized ? "w-0 flex-none" : "flex-1",
@@ -4122,7 +4162,10 @@ export default function ChatView(props: ChatViewProps) {
           keybindings={keybindings}
           onAddTerminalContext={addTerminalContextToDraftStable}
         />
-      </div>
+      </ChatColumn>
+      {isPanelWindow && canOperatePreview && activeThreadRef && activeEnvironmentServerBrowser ? (
+        <PreviewSessionSync threadRef={activeThreadRef} />
+      ) : null}
 
       {rightPanelPresent && activeThreadRef ? (
         <ChatRightPanel
@@ -4220,4 +4263,12 @@ export default function ChatView(props: ChatViewProps) {
 function PreviewSessionSync(props: { readonly threadRef: ScopedThreadRef }) {
   usePreviewSession(props.threadRef);
   return null;
+}
+
+/**
+ * The panel window shows only the right panel. Its chat column would still claim keyboard focus
+ * and pastes while hidden, so that window leaves it out.
+ */
+function ChatColumn({ omitted, ...props }: ComponentProps<"div"> & { readonly omitted: boolean }) {
+  return omitted ? null : <div {...props} />;
 }

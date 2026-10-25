@@ -1052,6 +1052,28 @@ describe("rightPanelStore", () => {
     }
   });
 
+  it("takes another window's tabs without dropping this window's pull request list", async () => {
+    const pullRequestsPanelRef = scopeThreadRef(
+      "env-1" as EnvironmentId,
+      ThreadId.make("pull-requests-panel"),
+    );
+    const { storage, name } = useRightPanelStore.persist.getOptions();
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().open(refB, "files");
+    const otherWindowWrite = await storage!.getItem(name!);
+
+    useRightPanelStore.setState({ byThreadKey: {} });
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().open(pullRequestsPanelRef, "diff");
+    await storage!.setItem(name!, otherWindowWrite!);
+    await useRightPanelStore.persist.rehydrate();
+
+    const { byThreadKey } = useRightPanelStore.getState();
+    expect(selectActiveRightPanel(byThreadKey, refB)).toBe("files");
+    // That list never persists, so the other window's write cannot carry it.
+    expect(selectActiveRightPanel(byThreadKey, pullRequestsPanelRef)).toBe("diff");
+  });
+
   it("keeps matching repository and number on different hosts as separate tabs", () => {
     const first = { projectId: "project-a", repository: "acme/api", number: 7, host: "github.com" };
     const second = { ...first, host: "github.example.com" };

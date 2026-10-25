@@ -1,4 +1,10 @@
-import { PanelBottomIcon, PanelRightIcon, RotateCwIcon, SquareMenuIcon } from "lucide-react";
+import {
+  PanelBottomIcon,
+  PanelRightIcon,
+  RotateCwIcon,
+  SquareArrowOutUpRightIcon,
+  SquareMenuIcon,
+} from "lucide-react";
 import { Maximize2, Minimize2 } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type ReactElement, type ReactNode, useLayoutEffect, useRef } from "react";
@@ -158,6 +164,39 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
           >
             <MorphIcon className="size-4" icon={maximized ? Minimize2 : Maximize2} />
           </Toggle>
+        }
+      />
+      <TooltipPopup side="bottom">{label}</TooltipPopup>
+    </Tooltip>
+  );
+});
+
+/** Moves the right panel into its own window, which can go on another display, and back. */
+export const RightPanelWindowControl = memo(function RightPanelWindowControl({
+  inPanelWindow,
+  onToggle,
+}: {
+  inPanelWindow: boolean;
+  onToggle: () => void;
+}) {
+  const label = inPanelWindow ? "Move panel back beside the chat" : "Move panel to its own window";
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            className="shrink-0 [-webkit-app-region:no-drag]"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={label}
+            onClick={onToggle}
+          >
+            {inPanelWindow ? (
+              <PanelRightIcon className="size-4" />
+            ) : (
+              <SquareArrowOutUpRightIcon className="size-4" />
+            )}
+          </Button>
         }
       />
       <TooltipPopup side="bottom">{label}</TooltipPopup>

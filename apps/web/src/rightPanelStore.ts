@@ -1211,6 +1211,23 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       }),
       migrate: migratePersistedRightPanelState,
+      // Another window's write rehydrates this store; panels that never persist stay as they are.
+      merge: (persisted, current) => {
+        const restored = persisted as Partial<RightPanelStoreState> | undefined;
+        if (!restored) return current;
+        return {
+          ...current,
+          ...restored,
+          byThreadKey: {
+            ...Object.fromEntries(
+              Object.entries(current.byThreadKey).filter(([threadKey]) =>
+                isPullRequestsPanelKey(threadKey),
+              ),
+            ),
+            ...restored.byThreadKey,
+          },
+        };
+      },
     },
   ),
 );

@@ -597,6 +597,8 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const displayMediaHandlerSessions = new WeakSet<Session>();
   let frameCaptureWindowOpen = true;
   let currentMainWindow: BrowserWindow | undefined;
+  // Windows besides the main one that may host browser tabs: the right panel's own window.
+  const extraHostWindows = new Set<BrowserWindow>();
   let mainWindowCleanupFiber: Fiber.Fiber<void, never> | undefined;
   const tabLifecycleLocks = new Map<
     string,
@@ -1688,6 +1690,28 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     ).pipe(Effect.uninterruptible);
   });
 
+  const addHostWindow = Effect.fn("PreviewManager.addHostWindow")(function* (
+    window: BrowserWindow,
+  ) {
+    yield* Effect.sync(() => {
+      if (window.isDestroyed()) return;
+      extraHostWindows.add(window);
+      window.once("closed", () => {
+        extraHostWindows.delete(window);
+      });
+    });
+  });
+
+  const isAppWindowContents = (
+    contents: Electron.WebContents | null,
+    mainWindow: Option.Option<BrowserWindow>,
+  ): boolean =>
+    Option.isNone(mainWindow) ||
+    contents === mainWindow.value.webContents ||
+    [...extraHostWindows].some(
+      (window) => !window.isDestroyed() && window.webContents === contents,
+    );
+
   const createTabUnlocked = Effect.fn("PreviewManager.createTabUnlocked")(function* (
     tabId: string,
     defaults?: DesktopPreviewTabDefaults,
@@ -1831,7 +1855,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       !wc ||
       wc.isDestroyed() ||
       wc.getType() !== "webview" ||
-      (Option.isSome(mainWindow) && wc.hostWebContents !== mainWindow.value.webContents)
+      !isAppWindowContents(wc.hostWebContents, mainWindow)
     ) {
       return yield* new PreviewWebContentsNotFoundError({ tabId, webContentsId });
     }
@@ -3418,6 +3442,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     setAudioMuted,
     setColorScheme,
     setMainWindow,
+    addHostWindow,
     setForwardedShortcuts: (shortcuts: ReadonlyArray<PreviewForwardedShortcut>) =>
       Effect.sync(() => {
         forwardedShortcuts = shortcuts;
@@ -3583,6 +3608,7 @@ export class PreviewManager extends Context.Service<
   PreviewManager,
   {
     readonly setMainWindow: (window: BrowserWindow) => Effect.Effect<void, PreviewManagerError>;
+    readonly addHostWindow: (window: BrowserWindow) => Effect.Effect<void>;
     readonly setForwardedShortcuts: (
       shortcuts: ReadonlyArray<PreviewForwardedShortcut>,
     ) => Effect.Effect<void>;
@@ -3734,6 +3760,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
 
   return PreviewManager.of({
     setMainWindow: operations.setMainWindow,
+    addHostWindow: operations.addHostWindow,
     setForwardedShortcuts: operations.setForwardedShortcuts,
     getBrowserSession: Effect.fn("PreviewManager.getBrowserSession")(
       function* (scope, persistent, namespace) {
