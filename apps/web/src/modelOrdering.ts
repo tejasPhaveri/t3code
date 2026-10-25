@@ -60,10 +60,13 @@ export function sortProviderModelItems<T extends ProviderModelItem>(
   options?: {
     readonly favoriteModelKeys?: ReadonlySet<string> | ReadonlyArray<string>;
     readonly groupFavorites?: boolean;
+    /** Keys in the order the user arranged their favorites; ranks ahead of the provider. */
+    readonly favoriteOrder?: ReadonlyArray<string>;
     readonly instanceOrder?: ReadonlyArray<ProviderInstanceId>;
   },
 ): T[] {
   const favoriteModelKeys = toSet(options?.favoriteModelKeys);
+  const favoriteRank = rankByValue(options?.favoriteOrder ?? []);
   const instanceOrder = new Map(
     Arr.map(options?.instanceOrder ?? [], (instanceId, index) => [instanceId, index] as const),
   );
@@ -78,9 +81,23 @@ export function sortProviderModelItems<T extends ProviderModelItem>(
           ),
         ]
       : []),
+    byOptionalRank((item) => favoriteRank.get(providerModelKey(item.instanceId, item.slug))),
     byOptionalRank((item) => instanceOrder.get(item.instanceId)),
     byOptionalRank((item) => originalOrder.get(providerModelKey(item.instanceId, item.slug))),
   ];
 
   return Arr.sort(items, Order.combineAll(orders));
+}
+
+/** The favorites with the one dragged moved into the place of the one it was dropped on. */
+export function moveFavoriteModel<
+  T extends { readonly provider: ProviderInstanceId; readonly model: string },
+>(favorites: ReadonlyArray<T>, fromKey: string, toKey: string): T[] {
+  const keyOf = (favorite: T) => providerModelKey(favorite.provider, favorite.model);
+  const from = favorites.findIndex((favorite) => keyOf(favorite) === fromKey);
+  const to = favorites.findIndex((favorite) => keyOf(favorite) === toKey);
+  if (from < 0 || to < 0 || from === to) return [...favorites];
+  const next = [...favorites];
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
 }

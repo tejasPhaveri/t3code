@@ -51,6 +51,7 @@ import {
 import {
   useEnvironmentModelPreferences,
   useToggleEnvironmentModelFavorite,
+  useUpdateEnvironmentModelPreferences,
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
 import { cn } from "~/lib/utils";
@@ -62,7 +63,7 @@ import {
   isProviderInstancePickerVisible,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
-import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
+import { moveFavoriteModel, providerModelKey, sortProviderModelItems } from "../../modelOrdering";
 
 type ModelPickerItem = {
   slug: string;
@@ -162,6 +163,7 @@ function adjacentModelPickerProvider(input: {
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const MODEL_LIST_ESTIMATED_ITEM_SIZE = 52;
+const FAVORITE_DRAG_TYPE = "application/x-t3code-favorite-model";
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -444,6 +446,23 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const keybindings = providedKeybindings ?? serverKeybindings;
   const [searchHeight, setSearchHeight] = useState(0);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
+  const updateModelPreferences = useUpdateEnvironmentModelPreferences(props.environmentId);
+  // A dropped favorite moves at once; the saved order takes over once settings report it.
+  const favoritesKey = JSON.stringify([...favoritesSet]);
+  const [arrangedFavorites, setArrangedFavorites] = useState<{
+    basis: string;
+    favorites: typeof favorites;
+  } | null>(null);
+  const orderedFavorites =
+    arrangedFavorites?.basis === favoritesKey ? arrangedFavorites.favorites : favorites;
+  const favoriteOrder = orderedFavorites.map((favorite) =>
+    providerModelKey(favorite.provider, favorite.model),
+  );
+  const moveFavorite = (fromKey: string, toKey: string) => {
+    const next = moveFavoriteModel(orderedFavorites, fromKey, toKey);
+    setArrangedFavorites({ basis: favoritesKey, favorites: next });
+    void updateModelPreferences({ favorites: next });
+  };
 
   const focusSearchInput = () => {
     searchInputRef.current?.focus({ preventScroll: true });
@@ -587,6 +606,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
   const isLocked = lockedProvider !== null;
   const isSearching = searchQuery.trim().length > 0;
+  // Favorites are arranged by dragging them in their own list, unfiltered.
+  const favoritesReorderable =
+    selectedInstanceId === "favorites" && !isSearching && favorites.length > 1;
   const lockedDisabledInstanceIds = (() => {
     if (!isLocked) {
       return undefined;
@@ -650,6 +672,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return sortProviderModelItems(result, {
       favoriteModelKeys: favoritesSet,
       groupFavorites: selectedInstanceId !== "favorites",
+      favoriteOrder,
       instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],
     });
   })();
@@ -973,7 +996,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 }
                 const disabledReason =
                   getModelDisabledReason?.(model.instanceId, model.slug) ?? null;
-                return (
+                const row = (
                   <ModelListRow
                     key={modelKey}
                     index={index}
@@ -1003,6 +1026,30 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     disabledReason={disabledReason}
                     onToggleFavorite={toggleFavorite}
                   />
+                );
+                if (!favoritesReorderable) return row;
+                return (
+                  <div
+                    key={modelKey}
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData(FAVORITE_DRAG_TYPE, modelKey);
+                      event.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragOver={(event) => {
+                      if (event.dataTransfer.types.includes(FAVORITE_DRAG_TYPE)) {
+                        event.preventDefault();
+                      }
+                    }}
+                    onDrop={(event) => {
+                      const fromKey = event.dataTransfer.getData(FAVORITE_DRAG_TYPE);
+                      if (!fromKey) return;
+                      event.preventDefault();
+                      moveFavorite(fromKey, modelKey);
+                    }}
+                  >
+                    {row}
+                  </div>
                 );
               }}
             />
