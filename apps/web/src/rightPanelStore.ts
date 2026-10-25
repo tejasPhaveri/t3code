@@ -1037,6 +1037,13 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             const activeStillExists = surfaces.some(
               (surface) => surface.id === current.activeSurfaceId,
             );
+            if (
+              added.length === 0 &&
+              kept.length === current.surfaces.length &&
+              (activeStillExists || (current.activeSurfaceId === null && surfaces.length === 0))
+            ) {
+              return current;
+            }
             const fallbackBrowser = surfaces.find((surface) => surface.kind === "preview");
             return {
               ...current,

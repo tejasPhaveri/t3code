@@ -1227,6 +1227,21 @@ describe("rightPanelStore", () => {
     expect(surfaceIds()).toEqual(["browser:tab-a", "terminal:term-1", "diff", "browser:tab-b"]);
     expect(store.getUserActionRevision(refA)).toBe(revision);
   });
+
+  it("leaves the state untouched when the tabs already match", () => {
+    // ChatView reconciles again whenever a chat's tabs change, so a pass that rebuilt them
+    // anyway would run forever.
+    const store = useRightPanelStore.getState();
+    store.reconcileBrowserSurfaces(refA, ["tab-a", "tab-b"]);
+    const before = useRightPanelStore.getState();
+
+    store.reconcileBrowserSurfaces(refA, ["tab-a", "tab-b"]);
+    store.reconcileGitGraphSurface(refA, false);
+    store.reconcileSharedTerminalSurfaces(refA, []);
+    store.applySharedTabOrder(refA, []);
+
+    expect(useRightPanelStore.getState()).toBe(before);
+  });
 });
 
 describe("reconcileSharedTerminalSurfaces", () => {
