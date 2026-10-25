@@ -421,9 +421,11 @@ const automaticUpdate = (
   state: RightPanelStoreState,
   threadKey: string,
   updater: (current: ThreadRightPanelState) => ThreadRightPanelState,
-): Partial<RightPanelStoreState> => ({
-  ...updateThread(state, threadKey, updater),
-});
+): Partial<RightPanelStoreState> => {
+  const next = updateThread(state, threadKey, updater);
+  // Reconcilers run often; a pass that changes nothing keeps the state, so nothing rerenders.
+  return next.byThreadKey === state.byThreadKey ? state : next;
+};
 
 const userAction = (
   state: RightPanelStoreState,

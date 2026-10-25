@@ -74,7 +74,8 @@ export function includeSharedTabs(
 
 /**
  * The tab a chat should switch to so it shows the project's selected tab, or null when it
- * already does, does not have that tab yet, or is showing one of its own tabs.
+ * already does, does not have that tab yet, or is showing one of its own tabs. A chat with
+ * no tab selected takes its first until the project's arrives, rather than show none.
  */
 export function followSharedActiveTab(
   threadId: string,
@@ -82,10 +83,13 @@ export function followSharedActiveTab(
   activeSurfaceId: string | null,
   activeKey: string | undefined,
 ): string | null {
-  if (activeKey === undefined) return null;
   const active = surfaces.find((surface) => surface.id === activeSurfaceId);
   if (active && sharedSurfaceKey(threadId, active) === null) return null;
-  const target = surfaces.find((surface) => sharedSurfaceKey(threadId, surface) === activeKey);
+  const target =
+    (activeKey === undefined
+      ? undefined
+      : surfaces.find((surface) => sharedSurfaceKey(threadId, surface) === activeKey)) ??
+    (active ? undefined : surfaces[0]);
   return target === undefined || target === active ? null : target.id;
 }
 

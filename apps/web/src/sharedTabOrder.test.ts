@@ -78,9 +78,20 @@ describe("shared tab order", () => {
     expect(followSharedActiveTab("B", tabs, "browser:tab_1", undefined)).toBeNull();
   });
 
+  it("selects a tab in a chat that has tabs but none selected", () => {
+    const key = sharedSurfaceKey("A", gitGraph)!;
+    const tabs = [browser("tab_1"), gitGraph];
+
+    expect(followSharedActiveTab("B", tabs, null, key)).toBe("git-graph");
+    // A selection whose tab is gone counts as none.
+    expect(followSharedActiveTab("B", tabs, "browser:tab_9", key)).toBe("git-graph");
+    expect(followSharedActiveTab("B", [browser("tab_1")], null, key)).toBe("browser:tab_1");
+    expect(followSharedActiveTab("B", tabs, null, undefined)).toBe("browser:tab_1");
+    expect(followSharedActiveTab("B", [], null, key)).toBeNull();
+  });
+
   it("leaves a chat on a tab of its own", () => {
     const key = sharedSurfaceKey("A", gitGraph)!;
     expect(followSharedActiveTab("B", [diff, gitGraph], "diff", key)).toBeNull();
-    expect(followSharedActiveTab("B", [diff, gitGraph], null, key)).toBe("git-graph");
   });
 });

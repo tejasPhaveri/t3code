@@ -1148,6 +1148,8 @@ export default function ChatView(props: ChatViewProps) {
 
   // While the panel has its own window, that window keeps its tabs. Reconciling them here too
   // would race its writes: each window reloads the other's, so a stale pass here undoes a drag.
+  // Each window can still save over the other with a copy that predates the other's last write,
+  // so the reconcilers run again when the tabs change and put back any they find missing.
   useEffect(() => {
     if (!activeThreadRef || !previewSessionsReady || rightPanelDetached) return;
     const hiddenTabIds = new Set(
@@ -1172,6 +1174,8 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadRef,
     previewSessionsReady,
     rightPanelDetached,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Tabs another window saved over come back.
+    rightPanelState.surfaces,
     sharedPreviewTabKey,
   ]);
 
@@ -1188,7 +1192,14 @@ export default function ChatView(props: ChatViewProps) {
           return { ownerThreadId, terminalId };
         }),
     );
-  }, [activeThreadRef, rightPanelDetached, sharedTerminalKey, terminalSessionsKnown]);
+  }, [
+    activeThreadRef,
+    rightPanelDetached,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Tabs another window saved over come back.
+    rightPanelState.surfaces,
+    sharedTerminalKey,
+    terminalSessionsKnown,
+  ]);
 
   useEffect(() => {
     const source = activePreviewMiniPlayer?.source;
@@ -1865,7 +1876,8 @@ export default function ChatView(props: ChatViewProps) {
   useEffect(() => {
     if (!activeThreadRef || rightPanelDetached) return;
     useRightPanelStore.getState().reconcileGitGraphSurface(activeThreadRef, gitGraphOpen);
-  }, [activeThreadRef, gitGraphOpen, rightPanelDetached]);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Tabs another window saved over come back.
+  }, [activeThreadRef, gitGraphOpen, rightPanelDetached, rightPanelState.surfaces]);
   const sharedTabOrder = useSharedTabOrderStore((state) =>
     activeScopedProjectKey === null ? undefined : state.byProjectKey[activeScopedProjectKey],
   );
@@ -1918,6 +1930,12 @@ export default function ChatView(props: ChatViewProps) {
     }
     // A detached panel's window does the following; this one still reports what it picked.
     if (rightPanelDetached) return;
+    if (sharedActiveKey === undefined) {
+      // A project with no selection yet takes the shared tab this chat shows.
+      const active = surfaces.find((surface) => surface.id === activeSurfaceId);
+      const key = active ? sharedSurfaceKey(activeThreadRef.threadId, active) : null;
+      if (key !== null) useSharedTabOrderStore.getState().setActive(activeScopedProjectKey, key);
+    }
     const follow = followSharedActiveTab(
       activeThreadRef.threadId,
       surfaces,
