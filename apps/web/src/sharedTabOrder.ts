@@ -93,6 +93,38 @@ export function followSharedActiveTab(
   return target === undefined || target === active ? null : target.id;
 }
 
+/** With the panel in its own window, the main window can keep some tabs beside the chat. */
+export type PanelWindowRole = "main" | "panel";
+
+/** A tab's identity for where it is shown: the same tab in every chat of the project. */
+export function placementKey(threadId: string, surface: RightPanelSurface): string {
+  return sharedSurfaceKey(threadId, surface) ?? surface.id;
+}
+
+/**
+ * The tabs one window shows of a chat whose panel is split across two windows, and the one it
+ * has selected: the chat's selection when that tab is here, else the tab this window showed
+ * last, else its first.
+ */
+export function windowPanelView(
+  threadId: string,
+  surfaces: readonly RightPanelSurface[],
+  activeSurfaceId: string | null,
+  role: PanelWindowRole,
+  mainWindowKeys: readonly string[],
+  shownKey: string | undefined,
+): { surfaces: RightPanelSurface[]; activeSurfaceId: string | null } {
+  const inMain = new Set(mainWindowKeys);
+  const shown = surfaces.filter(
+    (surface) => inMain.has(placementKey(threadId, surface)) === (role === "main"),
+  );
+  const active =
+    shown.find((surface) => surface.id === activeSurfaceId) ??
+    shown.find((surface) => placementKey(threadId, surface) === shownKey) ??
+    shown[0];
+  return { surfaces: shown, activeSurfaceId: active?.id ?? null };
+}
+
 interface SharedTabOrderStoreState {
   readonly byProjectKey: Readonly<Record<string, readonly string[]>>;
   /** The shared tab selected in the project, so every chat in it shows the same one. */
@@ -108,6 +140,12 @@ interface SharedTabOrderStoreState {
     surfaces: readonly RightPanelSurface[],
   ) => void;
   readonly setActive: (projectKey: string, key: string) => void;
+  /** Tabs the main window keeps while the panel has its own window; the rest go there. */
+  readonly mainWindowByProjectKey: Readonly<Record<string, readonly string[]>>;
+  /** The tab each window last showed, by `${role}:${projectKey}`. */
+  readonly shownByWindowKey: Readonly<Record<string, string>>;
+  readonly place: (projectKey: string, key: string, role: PanelWindowRole) => void;
+  readonly setShown: (role: PanelWindowRole, projectKey: string, key: string) => void;
 }
 
 /** Tab order shared by every chat in a project, so dragging a tab in one moves it in all. */
@@ -116,6 +154,8 @@ export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
     (set) => ({
       byProjectKey: {},
       activeByProjectKey: {},
+      mainWindowByProjectKey: {},
+      shownByWindowKey: {},
       record: (projectKey, threadId, surfaces) =>
         set((state) => ({
           byProjectKey: {
@@ -141,6 +181,26 @@ export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
             ? state
             : { activeByProjectKey: { ...state.activeByProjectKey, [projectKey]: key } },
         ),
+      place: (projectKey, key, role) =>
+        set((state) => {
+          const keys = state.mainWindowByProjectKey[projectKey] ?? [];
+          if (keys.includes(key) === (role === "main")) return state;
+          const next =
+            role === "main"
+              ? [...keys, key].slice(-MAX_ORDER_LENGTH)
+              : keys.filter((candidate) => candidate !== key);
+          return {
+            mainWindowByProjectKey: { ...state.mainWindowByProjectKey, [projectKey]: next },
+            shownByWindowKey: { ...state.shownByWindowKey, [`${role}:${projectKey}`]: key },
+          };
+        }),
+      setShown: (role, projectKey, key) =>
+        set((state) => {
+          const windowKey = `${role}:${projectKey}`;
+          return state.shownByWindowKey[windowKey] === key
+            ? state
+            : { shownByWindowKey: { ...state.shownByWindowKey, [windowKey]: key } };
+        }),
     }),
     {
       name: "t3code:shared-tab-order:v1",
@@ -151,6 +211,8 @@ export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
       partialize: (state) => ({
         byProjectKey: state.byProjectKey,
         activeByProjectKey: state.activeByProjectKey,
+        mainWindowByProjectKey: state.mainWindowByProjectKey,
+        shownByWindowKey: state.shownByWindowKey,
       }),
     },
   ),

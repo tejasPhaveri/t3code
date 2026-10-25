@@ -161,6 +161,7 @@ import {
 } from "../rightPanelLayout";
 import { PopoverCreateHandle } from "./ui/popover";
 import {
+  type RightPanelSurface,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadPanelOpen,
@@ -179,8 +180,16 @@ import {
   useProjectIdByThreadKey,
 } from "../browser/browserScope";
 import { BrowserPersistenceTitlebarControl } from "../browser/BrowserPersistenceTitlebarControl";
+import { openUrlInPreview } from "../browser/openFileInPreview";
 import { useGitGraphProjectState, useGitGraphProjectStore } from "./gitGraph/gitGraphProjectStore";
-import { followSharedActiveTab, sharedSurfaceKey, useSharedTabOrderStore } from "../sharedTabOrder";
+import {
+  followSharedActiveTab,
+  type PanelWindowRole,
+  placementKey,
+  sharedSurfaceKey,
+  useSharedTabOrderStore,
+  windowPanelView,
+} from "../sharedTabOrder";
 import { type RememberedTerminal, useRememberedTerminalsStore } from "../rememberedTerminalsStore";
 import { canReloadBrowserTabs, reloadBrowserTabs } from "../browser/reloadBrowserTabs";
 import {
@@ -975,12 +984,52 @@ export default function ChatView(props: ChatViewProps) {
       useDiffPanelStore.getState().selectGitScope(activeThreadRef, "branch");
     }
   }, [activeThreadRef, diffOpen]);
-  const rightPanelState = useRightPanelStore((state) =>
+  const threadRightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
-  const activeRightPanelSurface = useRightPanelStore((state) =>
+  const threadActiveRightPanelSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
   );
+  // Git Graph, tab order and tab placement are per project: every chat in it mirrors them.
+  const activeScopedProjectKey = activeThread
+    ? scopedProjectKey(scopeProjectRef(activeThread.environmentId, activeThread.projectId))
+    : null;
+  // While the panel has its own window, each window shows its share of the chat's tabs.
+  const panelWindowRole: PanelWindowRole | null = isPanelWindow
+    ? "panel"
+    : rightPanelDetached
+      ? "main"
+      : null;
+  const mainWindowTabKeys = useSharedTabOrderStore((state) =>
+    activeScopedProjectKey === null
+      ? undefined
+      : state.mainWindowByProjectKey[activeScopedProjectKey],
+  );
+  const windowShownTabKey = useSharedTabOrderStore((state) =>
+    panelWindowRole === null || activeScopedProjectKey === null
+      ? undefined
+      : state.shownByWindowKey[`${panelWindowRole}:${activeScopedProjectKey}`],
+  );
+  const rightPanelState =
+    panelWindowRole === null || !activeThreadRef
+      ? threadRightPanelState
+      : {
+          ...threadRightPanelState,
+          ...windowPanelView(
+            activeThreadRef.threadId,
+            threadRightPanelState.surfaces,
+            threadRightPanelState.activeSurfaceId,
+            panelWindowRole,
+            mainWindowTabKeys ?? [],
+            windowShownTabKey,
+          ),
+        };
+  const activeRightPanelSurface =
+    panelWindowRole === null
+      ? threadActiveRightPanelSurface
+      : (rightPanelState.surfaces.find(
+          (surface) => surface.id === rightPanelState.activeSurfaceId,
+        ) ?? null);
   const activePreviewState = useThreadPreviewState(activeThreadRef);
   const activePreviewServerEpoch = activePreviewState.serverEpoch;
   const previewByThreadKey = useActivePreviewSessions();
@@ -1097,13 +1146,16 @@ export default function ChatView(props: ChatViewProps) {
     selectThreadPreviewMiniPlayer(state.byThreadKey, activeThreadRef),
   );
   const panelTerminalIds = new Set(
-    rightPanelState.surfaces.flatMap((surface) =>
+    threadRightPanelState.surfaces.flatMap((surface) =>
       surface.kind === "terminal" ? surface.terminalIds : [],
     ),
   );
   const canReuseTerminal = activeThreadKnownSessionsRaw !== null;
   const previewPanelOpen = activeRightPanelKind === "preview" && browserAvailable;
-  const rightPanelOpen = isPanelWindow || (rightPanelState.isOpen && !rightPanelDetached);
+  // While detached, the main window shows the panel exactly when it keeps tabs of its own.
+  const rightPanelOpen =
+    isPanelWindow ||
+    (rightPanelDetached ? rightPanelState.surfaces.length > 0 : rightPanelState.isOpen);
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const rightPanelPresenceValue = {
@@ -1175,7 +1227,7 @@ export default function ChatView(props: ChatViewProps) {
     previewSessionsReady,
     rightPanelDetached,
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Tabs another window saved over come back.
-    rightPanelState.surfaces,
+    threadRightPanelState.surfaces,
     sharedPreviewTabKey,
   ]);
 
@@ -1196,7 +1248,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadRef,
     rightPanelDetached,
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Tabs another window saved over come back.
-    rightPanelState.surfaces,
+    threadRightPanelState.surfaces,
     sharedTerminalKey,
     terminalSessionsKnown,
   ]);
@@ -1868,16 +1920,12 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [environmentId, gitStatusCwd, liveIsGitRepo]);
   const isGitRepo = liveIsGitRepo ?? recallCheckoutIsRepo(environmentId, gitStatusCwd) ?? true;
-  // Git Graph and tab order are per project: every chat in it mirrors them.
-  const activeScopedProjectKey = activeThread
-    ? scopedProjectKey(scopeProjectRef(activeThread.environmentId, activeThread.projectId))
-    : null;
   const gitGraphOpen = useGitGraphProjectState(activeScopedProjectKey).open;
   useEffect(() => {
     if (!activeThreadRef || rightPanelDetached) return;
     useRightPanelStore.getState().reconcileGitGraphSurface(activeThreadRef, gitGraphOpen);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Tabs another window saved over come back.
-  }, [activeThreadRef, gitGraphOpen, rightPanelDetached, rightPanelState.surfaces]);
+  }, [activeThreadRef, gitGraphOpen, rightPanelDetached, threadRightPanelState.surfaces]);
   const sharedTabOrder = useSharedTabOrderStore((state) =>
     activeScopedProjectKey === null ? undefined : state.byProjectKey[activeScopedProjectKey],
   );
@@ -1887,14 +1935,14 @@ export default function ChatView(props: ChatViewProps) {
     // Including a new tab updates the order, which runs this again to sort it.
     useSharedTabOrderStore
       .getState()
-      .include(activeScopedProjectKey, activeThreadRef.threadId, rightPanelState.surfaces);
+      .include(activeScopedProjectKey, activeThreadRef.threadId, threadRightPanelState.surfaces);
     useRightPanelStore.getState().applySharedTabOrder(activeThreadRef, sharedTabOrder ?? []);
   }, [
     activeThreadRef,
     activeScopedProjectKey,
     rightPanelDetached,
     sharedTabOrder,
-    rightPanelState.surfaces,
+    threadRightPanelState.surfaces,
   ]);
   // The selected tab is per project too: picking a shared tab here selects it in every chat.
   const sharedActiveKey = useSharedTabOrderStore((state) =>
@@ -1910,7 +1958,7 @@ export default function ChatView(props: ChatViewProps) {
   } | null>(null);
   useEffect(() => {
     if (!activeThreadRef || activeThreadKey === null || activeScopedProjectKey === null) return;
-    const { activeSurfaceId, surfaces } = rightPanelState;
+    const { activeSurfaceId, surfaces } = threadRightPanelState;
     const last = sharedActiveSyncRef.current;
     sharedActiveSyncRef.current = {
       threadKey: activeThreadKey,
@@ -1924,8 +1972,17 @@ export default function ChatView(props: ChatViewProps) {
       last.activeSurfaceId !== activeSurfaceId;
     if (userPicked) {
       const active = surfaces.find((surface) => surface.id === activeSurfaceId);
-      const key = active ? sharedSurfaceKey(activeThreadRef.threadId, active) : null;
-      if (key !== null) useSharedTabOrderStore.getState().setActive(activeScopedProjectKey, key);
+      if (!active) return;
+      const store = useSharedTabOrderStore.getState();
+      const key = sharedSurfaceKey(activeThreadRef.threadId, active);
+      if (key !== null) store.setActive(activeScopedProjectKey, key);
+      // Each window of a split panel goes back to the tab last picked among its own.
+      const placed = placementKey(activeThreadRef.threadId, active);
+      store.setShown(
+        mainWindowTabKeys?.includes(placed) ? "main" : "panel",
+        activeScopedProjectKey,
+        placed,
+      );
       return;
     }
     // A detached panel's window does the following; this one still reports what it picked.
@@ -1947,8 +2004,9 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadRef,
     activeThreadKey,
     activeScopedProjectKey,
+    mainWindowTabKeys,
     rightPanelDetached,
-    rightPanelState,
+    threadRightPanelState,
     rightPanelUserActionRevision,
     sharedActiveKey,
   ]);
@@ -1974,7 +2032,7 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: true,
   });
   const [projectTabsDialogOpen, setProjectTabsDialogOpen] = useState(false);
-  const projectOpenTabs = rightPanelState.surfaces.flatMap((surface) => {
+  const projectOpenTabs = threadRightPanelState.surfaces.flatMap((surface) => {
     if (surface.kind !== "preview" || !surface.resourceId) return [];
     const snapshot = panelPreviewSessions[surface.resourceId];
     if (
@@ -2004,6 +2062,19 @@ export default function ChatView(props: ChatViewProps) {
       tabs,
     });
   };
+  // The copy opens the same page in the same profile, so it keeps that profile's sign-in.
+  const duplicateBrowserSurface = (surface: RightPanelSurface) => {
+    if (!activeThreadRef || surface.kind !== "preview" || surface.resourceId === null) return;
+    const snapshot = panelPreviewSessions[surface.resourceId];
+    if (!snapshot || snapshot.navStatus._tag === "Idle") return;
+    void openUrlInPreview({
+      threadRef: activeThreadRef,
+      url: snapshot.navStatus.url,
+      openPreview: openPreviewForProjectTabs,
+      ...(snapshot.profileId === undefined ? {} : { profileId: snapshot.profileId }),
+    });
+  };
+  const duplicateBrowserSurfaceStable = useStableCallback(duplicateBrowserSurface);
   const openConfiguredProjectTabsStable = useStableCallback(() =>
     openProjectTabs(browserProjectSetup?.tabs ?? []),
   );
@@ -2257,7 +2328,7 @@ export default function ChatView(props: ChatViewProps) {
     deviceStateLoaded,
     previewState: activePreviewState,
     serverBrowserAvailable: activeEnvironmentServerBrowser,
-    panelSurfaces: rightPanelState.surfaces,
+    panelSurfaces: threadRightPanelState.surfaces,
     miniPlayerSource: activePreviewMiniPlayer?.source ?? null,
     sheetLayout: shouldUsePlanSidebarSheet,
   });
@@ -3414,6 +3485,29 @@ export default function ChatView(props: ChatViewProps) {
       composerRef.current?.addDroppedFolders(folders),
   );
 
+  // A split panel's tab bar lists this window's share, so a drop index is into that share.
+  const moveRightPanelSurfaceInWindow = (surfaceId: string, toIndex: number) => {
+    const target = rightPanelState.surfaces[toIndex];
+    const fullIndex = target
+      ? threadRightPanelState.surfaces.findIndex((surface) => surface.id === target.id)
+      : -1;
+    if (fullIndex >= 0) moveRightPanelSurfaceStable(surfaceId, fullIndex);
+  };
+  const moveRightPanelSurfaceInWindowStable = useStableCallback(moveRightPanelSurfaceInWindow);
+  const moveRightPanelSurfaceToOtherWindow = (surface: RightPanelSurface) => {
+    if (!activeThreadRef || activeScopedProjectKey === null || panelWindowRole === null) return;
+    useSharedTabOrderStore
+      .getState()
+      .place(
+        activeScopedProjectKey,
+        placementKey(activeThreadRef.threadId, surface),
+        panelWindowRole === "main" ? "panel" : "main",
+      );
+  };
+  const moveRightPanelSurfaceToOtherWindowStable = useStableCallback(
+    moveRightPanelSurfaceToOtherWindow,
+  );
+
   if (!activeThread) {
     return <NoActiveThreadState />;
   }
@@ -3509,7 +3603,7 @@ export default function ChatView(props: ChatViewProps) {
     </>
   );
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
-  const browserTabIds = rightPanelState.surfaces.flatMap((surface) =>
+  const browserTabIds = threadRightPanelState.surfaces.flatMap((surface) =>
     surface.kind === "preview" && surface.resourceId !== null ? [surface.resourceId] : [],
   );
   const reloadAllBrowserTabs = () => {
@@ -4275,7 +4369,16 @@ export default function ChatView(props: ChatViewProps) {
           onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
           onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}
           onCloseAllSurfaces={closeAllRightPanelSurfacesStable}
-          onMoveSurface={moveRightPanelSurfaceStable}
+          onMoveSurface={moveRightPanelSurfaceInWindowStable}
+          {...(panelWindowRole === null
+            ? {}
+            : {
+                onMoveToOtherWindow: {
+                  label:
+                    panelWindowRole === "main" ? "Show in panel window" : "Show in main window",
+                  onMove: moveRightPanelSurfaceToOtherWindowStable,
+                },
+              })}
           onCopyFilePath={copyRightPanelFilePathStable}
           onAddBrowser={() => createBrowserSurface()}
           onAddBrowserInProfile={createBrowserSurfaceStable}
@@ -4287,6 +4390,7 @@ export default function ChatView(props: ChatViewProps) {
           }
           gitGraphAvailable={isGitRepo && activeWorkspaceRoot !== undefined}
           onAddIsolatedBrowser={createIsolatedBrowserSurfaceStable}
+          onDuplicateBrowser={duplicateBrowserSurfaceStable}
           onAddTerminal={addTerminalSurfaceStable}
           onAddDiff={addDiffSurfaceStable}
           onAddFiles={addFilesSurfaceStable}

@@ -140,6 +140,9 @@ export interface RightPanelTabsProps {
   onSetUpProjectTabs?: (() => void) | undefined;
   /** Opens a tab that stays in this chat when browser tabs are otherwise shared. */
   onAddIsolatedBrowser?: () => void;
+  onDuplicateBrowser?: (surface: RightPanelSurface) => void;
+  /** Present while the panel is split across two windows. */
+  onMoveToOtherWindow?: { label: string; onMove: (surface: RightPanelSurface) => void };
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
@@ -214,7 +217,9 @@ type TabContextMenuAction =
   | "rename"
   | "copy-path"
   | "toggle-mute"
+  | "duplicate"
   | "isolate"
+  | "move-window"
   | "close"
   | "close-others"
   | "close-to-right"
@@ -596,6 +601,7 @@ function surfaceTitle(
   sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
   terminalLabelsById: ReadonlyMap<string, string>,
   profileNamesById: ReadonlyMap<string, string>,
+  withPage = false,
 ): string {
   switch (surface.kind) {
     case "diff":
@@ -629,6 +635,8 @@ function surfaceTitle(
         snapshot?.profileId === undefined || snapshot.profileId === DEFAULT_BROWSER_PROFILE_ID
           ? undefined
           : profileNamesById.get(snapshot.profileId);
+      // A profile tab is labelled by its profile alone; the page shows on hover.
+      if (profileName && !withPage) return profileName;
       const withProfile = (label: string) => (profileName ? `${profileName} · ${label}` : label);
       if (!snapshot || snapshot.navStatus._tag === "Idle") return withProfile("Browser");
       if (snapshot.navStatus.title.trim().length > 0) return withProfile(snapshot.navStatus.title);
@@ -879,6 +887,7 @@ function RightPanelTab(
     active: boolean;
     pending: boolean;
     title: string;
+    tooltip: string;
     audio: TabAudioState;
     audioRuntimeTabId: string | null;
     previewUrl: string | null;
@@ -991,7 +1000,7 @@ function RightPanelTab(
                 title={title}
               />
             ) : (
-              title
+              props.tooltip
             )}
           </TooltipPopup>
         </Tooltip>
@@ -1200,8 +1209,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     const menuPreviewTabId = previewTabIdOf(surface, props.previewSessions);
     const menuOverlay = menuPreviewTabId ? (props.desktopByTabId[menuPreviewTabId] ?? null) : null;
     const menuMuted = menuOverlay?.audioMuted ?? false;
+    if (
+      surface.kind === "preview" &&
+      props.onDuplicateBrowser &&
+      menuPreviewTabId &&
+      props.previewSessions[menuPreviewTabId]?.navStatus._tag !== "Idle"
+    ) {
+      items.push({ id: "duplicate", label: "Duplicate tab" });
+    }
     if (surface.kind === "preview" && props.onAddIsolatedBrowser) {
       items.push({ id: "isolate", label: "New isolated tab" });
+    }
+    if (props.onMoveToOtherWindow) {
+      items.push({ id: "move-window", label: props.onMoveToOtherWindow.label });
     }
     if (surface.kind === "preview") {
       items.push({
@@ -1241,8 +1261,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           props.onCopyFilePath(surface.relativePath);
         }
         break;
+      case "duplicate":
+        props.onDuplicateBrowser?.(surface);
+        break;
       case "isolate":
         props.onAddIsolatedBrowser?.();
+        break;
+      case "move-window":
+        props.onMoveToOtherWindow?.onMove(surface);
         break;
       case "toggle-mute": {
         const runtimeTabId =
@@ -1396,6 +1422,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                       props.previewSessions,
                       props.terminalLabelsById,
                       profileNamesById,
+                    )}
+                    tooltip={surfaceTitle(
+                      surface,
+                      props.previewSessions,
+                      props.terminalLabelsById,
+                      profileNamesById,
+                      true,
                     )}
                     audio={tabAudioState(
                       previewTabId ? (props.desktopByTabId[previewTabId] ?? null) : null,

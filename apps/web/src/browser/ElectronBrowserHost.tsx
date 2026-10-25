@@ -5,12 +5,13 @@ import {
   FILL_PREVIEW_VIEWPORT,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { type ComponentProps, useEffect, useEffectEvent, useState } from "react";
+import { type ComponentProps, useEffect, useEffectEvent, useLayoutEffect, useState } from "react";
 
 import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
 import { isElectron } from "~/env";
-import { useRightPanelDetached } from "~/panelWindow";
+import { isPanelWindow, useRightPanelDetached } from "~/panelWindow";
+import { useSharedTabOrderStore } from "~/sharedTabOrder";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { useDesktopHostedPreviewSessions } from "~/components/preview/usePreviewSession";
 import { useActivePreviewSessions } from "~/previewStateStore";
@@ -26,6 +27,7 @@ import { openUrlInPreview } from "./openFileInPreview";
 import { rendersServerTabNatively } from "./previewRuntime";
 import { previewRuntimeTabId } from "./previewRuntimeTabId";
 import { browserTabNeedsPage, useActivatedBrowserTabs } from "./browserTabActivation";
+import { handOffDesktopTab } from "./desktopTabLifetime";
 
 export function ElectronBrowserHost() {
   const previewByThreadKey = useActivePreviewSessions();
@@ -33,8 +35,15 @@ export function ElectronBrowserHost() {
   useDesktopHostedPreviewSessions(primaryEnvironmentId);
   const activatedTabIds = useActivatedBrowserTabs();
   const browserDefaults = useBrowserDefaults();
-  // A page lives in one window at a time: while the panel has its own window, it hosts them.
+  // A page lives in one window at a time: while the panel has its own window, it hosts them,
+  // except those of tabs the main window keeps beside the chat.
   const panelDetached = useRightPanelDetached();
+  const mainWindowByProjectKey = useSharedTabOrderStore((state) => state.mainWindowByProjectKey);
+  const mainWindowKeys = new Set(Object.values(mainWindowByProjectKey).flat());
+  const hostsTab = (tabId: string) =>
+    isPanelWindow
+      ? !mainWindowKeys.has(`browser:${tabId}`)
+      : !panelDetached || mainWindowKeys.has(`browser:${tabId}`);
   const activeSessions = Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
     const threadRef = parseScopedThreadKey(threadKey);
     return threadRef
@@ -57,9 +66,21 @@ export function ElectronBrowserHost() {
   });
   // Electron destroys a moved webview's guest, so the render order must not follow the server's
   // updatedAt order. Any fixed order works; this one is not a display order.
-  const sessions = activeSessions.toSorted((left, right) =>
-    left.runtimeTabId < right.runtimeTabId ? -1 : left.runtimeTabId > right.runtimeTabId ? 1 : 0,
-  );
+  const sessions = activeSessions
+    .filter((session) => hostsTab(session.snapshot.tabId))
+    .toSorted((left, right) =>
+      left.runtimeTabId < right.runtimeTabId ? -1 : left.runtimeTabId > right.runtimeTabId ? 1 : 0,
+    );
+  const hostedElsewhereKey = activeSessions
+    .filter((session) => !hostsTab(session.snapshot.tabId))
+    .map((session) => session.runtimeTabId)
+    .join("\0");
+  // Runs before the moved webviews' cleanups release them, so the other window keeps the page.
+  useLayoutEffect(() => {
+    for (const runtimeTabId of hostedElsewhereKey.split("\0")) {
+      if (runtimeTabId.length > 0) handOffDesktopTab(runtimeTabId);
+    }
+  }, [hostedElsewhereKey]);
 
   useEffect(() => {
     const preview = window.desktopBridge?.preview;
@@ -104,7 +125,6 @@ export function ElectronBrowserHost() {
 
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: true });
   const onOpenLink = useEffectEvent(({ tabId, url, background }: DesktopPreviewOpenLinkEvent) => {
-    if (panelDetached) return;
     const source = sessions.find((session) => session.runtimeTabId === tabId);
     if (!source) return;
     void openUrlInPreview({
@@ -121,7 +141,7 @@ export function ElectronBrowserHost() {
     return preview.onOpenLink(onOpenLink);
   }, []);
 
-  if (!isElectron || panelDetached) return null;
+  if (!isElectron) return null;
   return (
     <div className="contents" data-electron-browser-host>
       {sessions.map(({ threadRef, snapshot, runtimeTabId, pictureInPicture, zoomFactor }) => {

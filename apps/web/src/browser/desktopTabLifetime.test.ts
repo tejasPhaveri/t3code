@@ -21,7 +21,7 @@ vi.mock("./browserRecording", () => ({
   stopBrowserRecording,
 }));
 
-import { acquireDesktopTab } from "./desktopTabLifetime";
+import { acquireDesktopTab, handOffDesktopTab } from "./desktopTabLifetime";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 
 const DEFAULT_TAB_STATE = {
@@ -125,5 +125,24 @@ describe("desktopTabLifetime", () => {
     resolveClose?.();
     await reacquired.ready;
     expect(createTab).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves a tab handed to the other window open, and closes it again once taken back", async () => {
+    vi.useFakeTimers();
+    createTab.mockResolvedValue(undefined);
+
+    const lease = acquireDesktopTab("tab_hand_off");
+    await lease.ready;
+    handOffDesktopTab("tab_hand_off");
+    lease.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(closeTab).not.toHaveBeenCalled();
+
+    // The tab comes back to this window and later closes for good.
+    const returned = acquireDesktopTab("tab_hand_off");
+    await returned.ready;
+    returned.release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(closeTab).toHaveBeenCalledWith("tab_hand_off");
   });
 });

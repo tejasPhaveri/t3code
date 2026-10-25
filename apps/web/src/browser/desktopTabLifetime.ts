@@ -7,6 +7,7 @@ interface DesktopTabLease {
   references: number;
   closeTimer: number | null;
   ready: Promise<void>;
+  handedOff?: true;
 }
 
 const leases = new Map<string, DesktopTabLease>();
@@ -63,6 +64,7 @@ export function acquireDesktopTab(
       ),
     } satisfies DesktopTabLease);
   if (current.closeTimer !== null) window.clearTimeout(current.closeTimer);
+  delete current.handedOff;
   current.references += 1;
   current.closeTimer = null;
   leases.set(tabId, current);
@@ -74,6 +76,10 @@ export function acquireDesktopTab(
       if (!lease) return;
       lease.references = Math.max(0, lease.references - 1);
       if (lease.references > 0) return;
+      if (lease.handedOff) {
+        leases.delete(tabId);
+        return;
+      }
       lease.closeTimer = window.setTimeout(() => {
         const latest = leases.get(tabId);
         if (!latest || latest.references > 0) return;
@@ -85,4 +91,13 @@ export function acquireDesktopTab(
       }, 0);
     },
   };
+}
+
+/**
+ * The page moves to the other app window, which takes it over: letting go here must not close it
+ * there. Call before the webview unmounts.
+ */
+export function handOffDesktopTab(tabId: string): void {
+  const lease = leases.get(tabId);
+  if (lease) lease.handedOff = true;
 }

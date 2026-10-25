@@ -7,6 +7,7 @@ import {
   includeSharedTabs,
   recordSharedTabOrder,
   sharedSurfaceKey,
+  windowPanelView,
 } from "./sharedTabOrder";
 
 const browser = (tabId: string): RightPanelSurface => ({
@@ -93,5 +94,27 @@ describe("shared tab order", () => {
   it("leaves a chat on a tab of its own", () => {
     const key = sharedSurfaceKey("A", gitGraph)!;
     expect(followSharedActiveTab("B", [diff, gitGraph], "diff", key)).toBeNull();
+  });
+
+  it("splits a chat's tabs between the main window and the panel window", () => {
+    const tabs = [gitGraph, browser("tab_1"), browser("tab_2"), diff];
+    const mainKeys = ["git-graph", "browser:tab_2"];
+
+    const main = windowPanelView("A", tabs, "browser:tab_1", "main", mainKeys, "browser:tab_2");
+    expect(ids(main.surfaces)).toEqual(["git-graph", "browser:tab_2"]);
+    // The chat's selection is in the other window, so this one keeps the tab it showed last.
+    expect(main.activeSurfaceId).toBe("browser:tab_2");
+
+    const panel = windowPanelView("A", tabs, "browser:tab_1", "panel", mainKeys, undefined);
+    expect(ids(panel.surfaces)).toEqual(["browser:tab_1", "diff"]);
+    expect(panel.activeSurfaceId).toBe("browser:tab_1");
+
+    expect(windowPanelView("A", tabs, "diff", "main", mainKeys, undefined).activeSurfaceId).toBe(
+      "git-graph",
+    );
+    expect(windowPanelView("A", tabs, null, "main", [], undefined)).toEqual({
+      surfaces: [],
+      activeSurfaceId: null,
+    });
   });
 });

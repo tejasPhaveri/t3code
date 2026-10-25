@@ -252,6 +252,10 @@ window. The window reopens where you left it, including after a restart. Choose 
 beside the chat**, or close the window, to return the panel. Browser tabs reload when they move
 between windows; their sign-ins stay.
 
+To keep some tabs beside the chat while the rest stay on the other display, right-click a tab and
+choose **Show in main window**. Every chat in the project keeps that tab there. Choose **Show in
+panel window** to send it back. New tabs open in the panel window.
+
 ## Snooze until later
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your
