@@ -180,7 +180,7 @@ import {
 } from "../browser/browserScope";
 import { BrowserPersistenceTitlebarControl } from "../browser/BrowserPersistenceTitlebarControl";
 import { useGitGraphProjectState, useGitGraphProjectStore } from "./gitGraph/gitGraphProjectStore";
-import { takeCarriedActiveTab, useSharedTabOrderStore } from "../sharedTabOrder";
+import { followSharedActiveTab, sharedSurfaceKey, useSharedTabOrderStore } from "../sharedTabOrder";
 import { type RememberedTerminal, useRememberedTerminalsStore } from "../rememberedTerminalsStore";
 import { canReloadBrowserTabs, reloadBrowserTabs } from "../browser/reloadBrowserTabs";
 import {
@@ -1876,20 +1876,63 @@ export default function ChatView(props: ChatViewProps) {
     useSharedTabOrderStore
       .getState()
       .include(activeScopedProjectKey, activeThreadRef.threadId, rightPanelState.surfaces);
-    const panel = useRightPanelStore.getState();
-    panel.applySharedTabOrder(activeThreadRef, sharedTabOrder ?? []);
-    const carried = takeCarriedActiveTab(
-      scopedThreadKey(activeThreadRef),
-      activeThreadRef.threadId,
-      rightPanelState.surfaces,
-    );
-    if (carried !== null) panel.activateSurface(activeThreadRef, carried);
+    useRightPanelStore.getState().applySharedTabOrder(activeThreadRef, sharedTabOrder ?? []);
   }, [
     activeThreadRef,
     activeScopedProjectKey,
     rightPanelDetached,
     sharedTabOrder,
     rightPanelState.surfaces,
+  ]);
+  // The selected tab is per project too: picking a shared tab here selects it in every chat.
+  const sharedActiveKey = useSharedTabOrderStore((state) =>
+    activeScopedProjectKey === null ? undefined : state.activeByProjectKey[activeScopedProjectKey],
+  );
+  const rightPanelUserActionRevision = useRightPanelStore((state) =>
+    activeThreadKey === null ? 0 : (state.userActionRevisionByThreadKey[activeThreadKey] ?? 0),
+  );
+  const sharedActiveSyncRef = useRef<{
+    threadKey: string;
+    revision: number;
+    activeSurfaceId: string | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!activeThreadRef || activeThreadKey === null || activeScopedProjectKey === null) return;
+    const { activeSurfaceId, surfaces } = rightPanelState;
+    const last = sharedActiveSyncRef.current;
+    sharedActiveSyncRef.current = {
+      threadKey: activeThreadKey,
+      revision: rightPanelUserActionRevision,
+      activeSurfaceId,
+    };
+    // Only a tab the user chose counts; tabs arriving in a new chat select one on their own.
+    const userPicked =
+      last?.threadKey === activeThreadKey &&
+      last.revision !== rightPanelUserActionRevision &&
+      last.activeSurfaceId !== activeSurfaceId;
+    if (userPicked) {
+      const active = surfaces.find((surface) => surface.id === activeSurfaceId);
+      const key = active ? sharedSurfaceKey(activeThreadRef.threadId, active) : null;
+      if (key !== null) useSharedTabOrderStore.getState().setActive(activeScopedProjectKey, key);
+      return;
+    }
+    // A detached panel's window does the following; this one still reports what it picked.
+    if (rightPanelDetached) return;
+    const follow = followSharedActiveTab(
+      activeThreadRef.threadId,
+      surfaces,
+      activeSurfaceId,
+      sharedActiveKey,
+    );
+    if (follow !== null) useRightPanelStore.getState().followSharedTab(activeThreadRef, follow);
+  }, [
+    activeThreadRef,
+    activeThreadKey,
+    activeScopedProjectKey,
+    rightPanelDetached,
+    rightPanelState,
+    rightPanelUserActionRevision,
+    sharedActiveKey,
   ]);
   const openGitGraph = () => {
     if (!activeThreadRef || activeScopedProjectKey === null) return;

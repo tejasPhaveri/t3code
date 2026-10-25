@@ -72,31 +72,27 @@ export function includeSharedTabs(
   return added.length === 0 ? order : [...order, ...added].slice(-MAX_ORDER_LENGTH);
 }
 
-// Which shared tab a just-created chat should show once its tabs arrive. Session-only:
-// a restart has no chat being created.
-const pendingActiveKeyByThreadKey = new Map<string, string>();
-
-/** The new chat shows the shared tab the chat it was created from was showing. */
-export function carryActiveSharedTab(newThreadKey: string, key: string): void {
-  pendingActiveKeyByThreadKey.set(newThreadKey, key);
-}
-
-/** The surface a new chat should switch to now that it has it, consuming the request. */
-export function takeCarriedActiveTab(
-  threadKey: string,
+/**
+ * The tab a chat should switch to so it shows the project's selected tab, or null when it
+ * already does, does not have that tab yet, or is showing one of its own tabs.
+ */
+export function followSharedActiveTab(
   threadId: string,
   surfaces: readonly RightPanelSurface[],
+  activeSurfaceId: string | null,
+  activeKey: string | undefined,
 ): string | null {
-  const key = pendingActiveKeyByThreadKey.get(threadKey);
-  if (key === undefined) return null;
-  const surface = surfaces.find((candidate) => sharedSurfaceKey(threadId, candidate) === key);
-  if (!surface) return null;
-  pendingActiveKeyByThreadKey.delete(threadKey);
-  return surface.id;
+  if (activeKey === undefined) return null;
+  const active = surfaces.find((surface) => surface.id === activeSurfaceId);
+  if (active && sharedSurfaceKey(threadId, active) === null) return null;
+  const target = surfaces.find((surface) => sharedSurfaceKey(threadId, surface) === activeKey);
+  return target === undefined || target === active ? null : target.id;
 }
 
 interface SharedTabOrderStoreState {
   readonly byProjectKey: Readonly<Record<string, readonly string[]>>;
+  /** The shared tab selected in the project, so every chat in it shows the same one. */
+  readonly activeByProjectKey: Readonly<Record<string, string>>;
   readonly record: (
     projectKey: string,
     threadId: string,
@@ -107,6 +103,7 @@ interface SharedTabOrderStoreState {
     threadId: string,
     surfaces: readonly RightPanelSurface[],
   ) => void;
+  readonly setActive: (projectKey: string, key: string) => void;
 }
 
 /** Tab order shared by every chat in a project, so dragging a tab in one moves it in all. */
@@ -114,6 +111,7 @@ export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
   persist(
     (set) => ({
       byProjectKey: {},
+      activeByProjectKey: {},
       record: (projectKey, threadId, surfaces) =>
         set((state) => ({
           byProjectKey: {
@@ -133,6 +131,12 @@ export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
             ? state
             : { byProjectKey: { ...state.byProjectKey, [projectKey]: next } };
         }),
+      setActive: (projectKey, key) =>
+        set((state) =>
+          state.activeByProjectKey[projectKey] === key
+            ? state
+            : { activeByProjectKey: { ...state.activeByProjectKey, [projectKey]: key } },
+        ),
     }),
     {
       name: "t3code:shared-tab-order:v1",
@@ -140,7 +144,10 @@ export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      partialize: (state) => ({ byProjectKey: state.byProjectKey }),
+      partialize: (state) => ({
+        byProjectKey: state.byProjectKey,
+        activeByProjectKey: state.activeByProjectKey,
+      }),
     },
   ),
 );

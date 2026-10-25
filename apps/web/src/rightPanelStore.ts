@@ -188,6 +188,8 @@ interface RightPanelStoreState {
   moveSurface: (ref: ScopedThreadRef, surfaceId: string, toIndex: number) => void;
   /** Sorts the tabs this chat shares with its project into the project's tab order. */
   applySharedTabOrder: (ref: ScopedThreadRef, order: readonly string[]) => void;
+  /** Shows the tab the project has selected, without opening a closed panel. */
+  followSharedTab: (ref: ScopedThreadRef, surfaceId: string) => void;
   reconcileBrowserSurfaces: (
     ref: ScopedThreadRef,
     tabIds: readonly string[],
@@ -1006,6 +1008,15 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               ? current
               : { ...current, surfaces: [...surfaces] };
           }),
+        ),
+      followSharedTab: (ref, surfaceId) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) =>
+            current.activeSurfaceId !== surfaceId &&
+            current.surfaces.some((surface) => surface.id === surfaceId)
+              ? { ...current, activeSurfaceId: surfaceId }
+              : current,
+          ),
         ),
       reconcileBrowserSurfaces: (ref, tabIds, hiddenTabIds) =>
         set((state) =>
