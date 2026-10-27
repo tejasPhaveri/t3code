@@ -3,7 +3,7 @@
 The desktop app can import cookies from another browser so you can reuse its signed-in sessions
 in the preview browser.
 
-Open **Settings → Integrations → Browser profiles → Add profile**, then choose a browser under
+Open **Settings → Browser → Browser profiles → Add profile**, then choose a browser under
 **Import from**. Close the source browser before importing, and allow an operating-system keyring
 unlock prompt if one appears.
 
@@ -15,14 +15,14 @@ System Settings permission list, and turn access on. **Continue** becomes availa
 is detected. macOS may require you to quit and reopen T3 Code before the grant applies; reopen
 the import wizard afterward. You can revoke Full Disk Access once the import is done.
 
-On Windows, import supports Firefox and Helium profiles that use standard profile encryption.
+On Windows, import supports Firefox, Zen, and Helium profiles that use standard profile encryption.
 Other Chromium-based browsers use app-bound encryption and cannot be imported. Partitioned cookies
 are skipped on all platforms.
 
 ## Show another browser's bookmarks
 
 A browser profile can show the bookmarks bar of a Chrome, Edge, Brave, Arc or other Chromium-based
-browser profile on the same computer. In **Settings → Integrations → Browser profiles**, open a
+browser profile on the same computer. In **Settings → Browser → Browser profiles**, open a
 profile's **⋯** menu and choose one under **Bookmarks bar**, or **Off** to hide it. The bar shows
 under the address bar of that profile's tabs, follows bookmarks you add in the other browser when
 you return to T3 Code, and works while that browser is open. Bookmarklets are left out.

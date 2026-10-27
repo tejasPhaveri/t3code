@@ -23,8 +23,7 @@ export function PanelWindowLayout({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider
       className="h-dvh! min-h-0!"
-      open={false}
-      onOpenChange={() => {}}
+      defaultOpen={false}
       style={isMacosDesktop ? MACOS_WINDOW_CONTROLS_STYLE : undefined}
     >
       {routeTarget ? children : <PanelWindowNoChat />}

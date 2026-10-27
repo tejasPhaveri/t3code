@@ -2,13 +2,9 @@ import * as Schema from "effect/Schema";
 import { BrowserProfileId } from "./browserProfile.ts";
 
 /**
- * Who owns a live browser tab.
- *
- * - `thread`: the chat that opened it (the historical behavior).
- * - `project`: every chat in that project references the same tabs.
- * - `environment`: every project on this machine's environment does.
- *
- * An isolated tab stays with its chat in every mode.
+ * Who owns a live browser tab: the chat that opened it (`thread`), every chat in its project
+ * (`project`), or every project in the environment (`environment`). An isolated tab stays with
+ * its chat in every mode.
  */
 export const BrowserPersistence = Schema.Literals(["thread", "project", "environment"]);
 export type BrowserPersistence = typeof BrowserPersistence.Type;

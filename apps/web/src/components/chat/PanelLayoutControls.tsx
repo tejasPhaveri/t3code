@@ -10,7 +10,6 @@ import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type ReactElement, type ReactNode, useLayoutEffect, useRef } from "react";
 
 import { observeResize } from "~/lib/observeResize";
-import { cn } from "~/lib/utils";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { Button } from "../ui/button";

@@ -5,21 +5,14 @@ import { subscribeComposerDraftModelReconciliation } from "./composerDraftStore"
 import { environmentThreadShells } from "./state/threads";
 import { environmentShell } from "./state/shell";
 
-import { BrowserProfileReporter } from "./browser/BrowserProfileReporter";
 import { BrowserSessionRestorer } from "./browser/BrowserSessionRestorer";
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
-import { installCrossWindowStoreSync } from "./crossWindowStores";
-import { installPanelWindowAnnotationForwarding } from "./panelWindowAnnotations";
 import { isPanelWindow } from "./panelWindow";
 import { appAtomRegistry, AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
 
-/**
- * The Electron browser host intentionally sits outside the router so its
- * webviews survive route transitions, but it must share the same atom registry
- * as routed UI.
- */
+// Keep webviews outside the router but inside its atom registry so route changes preserve them.
 export function AppRoot({ router }: { readonly router: AppRouter }) {
   useEffect(
     () =>
@@ -31,14 +24,11 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
       }),
     [],
   );
-  useEffect(() => installCrossWindowStoreSync(), []);
-  useEffect(() => installPanelWindowAnnotationForwarding(), []);
   return (
     <AppAtomRegistryProvider>
       <RouterProvider router={router} />
       <ElectronBrowserHost />
-      {/* The main window restores and reports for both windows. */}
-      {isPanelWindow ? null : <BrowserProfileReporter />}
+      {/* The main window restores browser sessions for both windows. */}
       {isPanelWindow ? null : <BrowserSessionRestorer />}
       <QuitHoldOverlay />
     </AppAtomRegistryProvider>

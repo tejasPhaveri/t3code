@@ -1,11 +1,14 @@
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   AuthPreviewOperateScope,
+  type DesktopPreviewBridge,
   type DesktopPreviewOpenLinkEvent,
+  type EnvironmentId,
   FILL_PREVIEW_VIEWPORT,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { type ComponentProps, useEffect, useEffectEvent, useLayoutEffect, useState } from "react";
+import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { type ComponentProps, useLayoutEffect, useState } from "react";
 
 import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
@@ -14,10 +17,14 @@ import { isPanelWindow, useRightPanelDetached } from "~/panelWindow";
 import { useSharedTabOrderStore } from "~/sharedTabOrder";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { useDesktopHostedPreviewSessions } from "~/components/preview/usePreviewSession";
-import { useActivePreviewSessions } from "~/previewStateStore";
+import {
+  readActivePreviewSessions,
+  type ThreadPreviewState,
+  useActivePreviewSessions,
+} from "~/previewStateStore";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { previewEnvironment } from "~/state/preview";
 import { useEnvironmentScope } from "~/state/session";
-import { useAtomCommand } from "~/state/use-atom-command";
 
 import { readPreviewAnnotationTheme } from "./annotationTheme";
 import { serverTabRendering, useBrowserDefaults } from "./browserDefaults";
@@ -26,24 +33,19 @@ import { HostedBrowserWebview } from "./HostedBrowserWebview";
 import { openUrlInPreview } from "./openFileInPreview";
 import { rendersServerTabNatively } from "./previewRuntime";
 import { previewRuntimeTabId } from "./previewRuntimeTabId";
-import { browserTabNeedsPage, useActivatedBrowserTabs } from "./browserTabActivation";
+import {
+  browserTabNeedsPage,
+  readActivatedBrowserTabs,
+  useActivatedBrowserTabs,
+} from "./browserTabActivation";
 import { handOffDesktopTab } from "./desktopTabLifetime";
 
-export function ElectronBrowserHost() {
-  const previewByThreadKey = useActivePreviewSessions();
-  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
-  useDesktopHostedPreviewSessions(primaryEnvironmentId);
-  const activatedTabIds = useActivatedBrowserTabs();
-  const browserDefaults = useBrowserDefaults();
-  // A page lives in one window at a time: while the panel has its own window, it hosts them,
-  // except those of tabs the main window keeps beside the chat.
-  const panelDetached = useRightPanelDetached();
-  const mainWindowByProjectKey = useSharedTabOrderStore((state) => state.mainWindowByProjectKey);
-  const mainWindowKeys = new Set(Object.values(mainWindowByProjectKey).flat());
-  const hostsTab = (tabId: string) =>
-    isPanelWindow
-      ? !mainWindowKeys.has(`browser:${tabId}`)
-      : !panelDetached || mainWindowKeys.has(`browser:${tabId}`);
+/** Every session this window may render as a hosted webview, in a fixed (non-display) order. */
+function hostedBrowserSessions(
+  previewByThreadKey: Record<string, ThreadPreviewState>,
+  primaryEnvironmentId: EnvironmentId | null,
+  activatedTabIds: ReadonlySet<string>,
+) {
   const activeSessions = Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
     const threadRef = parseScopedThreadKey(threadKey);
     return threadRef
@@ -66,11 +68,95 @@ export function ElectronBrowserHost() {
   });
   // Electron destroys a moved webview's guest, so the render order must not follow the server's
   // updatedAt order. Any fixed order works; this one is not a display order.
-  const sessions = activeSessions
-    .filter((session) => hostsTab(session.snapshot.tabId))
-    .toSorted((left, right) =>
-      left.runtimeTabId < right.runtimeTabId ? -1 : left.runtimeTabId > right.runtimeTabId ? 1 : 0,
-    );
+  return activeSessions.toSorted((left, right) =>
+    left.runtimeTabId < right.runtimeTabId ? -1 : left.runtimeTabId > right.runtimeTabId ? 1 : 0,
+  );
+}
+
+function startAnnotationThemeSync(preview: DesktopPreviewBridge): () => void {
+  let lastSerializedTheme = "";
+  const syncTheme = () => {
+    const theme = readPreviewAnnotationTheme();
+    const serializedTheme = JSON.stringify(theme);
+    if (serializedTheme === lastSerializedTheme) return;
+    lastSerializedTheme = serializedTheme;
+    void preview.setAnnotationTheme(theme).catch(() => {
+      lastSerializedTheme = "";
+    });
+  };
+  // App services start before the first paint, when the theme styles may not be applied yet.
+  const frameId = window.requestAnimationFrame(syncTheme);
+  const observer = new MutationObserver(syncTheme);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class", "style"],
+  });
+  const headObserver = new MutationObserver(syncTheme);
+  headObserver.observe(document.head, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+  return () => {
+    window.cancelAnimationFrame(frameId);
+    observer.disconnect();
+    headObserver.disconnect();
+  };
+}
+
+function openLinkInPreview({ tabId, url, background }: DesktopPreviewOpenLinkEvent): void {
+  const source = hostedBrowserSessions(
+    readActivePreviewSessions(),
+    appAtomRegistry.get(primaryEnvironmentIdAtom),
+    readActivatedBrowserTabs(),
+  ).find((session) => session.runtimeTabId === tabId);
+  if (!source) return;
+  void openUrlInPreview({
+    threadRef: source.threadRef,
+    url,
+    openPreview: (input) => runAtomCommand(appAtomRegistry, previewEnvironment.open, input),
+    profileId: source.snapshot.profileId,
+    background,
+  });
+}
+
+/** App-lifetime listeners for the desktop preview bridge: annotation theme, agent pointer, links. */
+export function startElectronBrowserHost(): () => void {
+  const preview = window.desktopBridge?.preview;
+  if (!preview) return () => {};
+  const disposers = [
+    startAnnotationThemeSync(preview),
+    preview.onPointerEvent((event) => {
+      useBrowserPointerStore.getState().apply(event);
+    }),
+    preview.onOpenLink(openLinkInPreview),
+  ];
+  return () => {
+    for (const dispose of disposers) dispose();
+  };
+}
+
+export function ElectronBrowserHost() {
+  const previewByThreadKey = useActivePreviewSessions();
+  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
+  useDesktopHostedPreviewSessions(primaryEnvironmentId);
+  const activatedTabIds = useActivatedBrowserTabs();
+  const browserDefaults = useBrowserDefaults();
+  // A page lives in one window at a time: while the panel has its own window, it hosts them,
+  // except those of tabs the main window keeps beside the chat.
+  const panelDetached = useRightPanelDetached();
+  const mainWindowByProjectKey = useSharedTabOrderStore((state) => state.mainWindowByProjectKey);
+  const mainWindowKeys = new Set(Object.values(mainWindowByProjectKey).flat());
+  const hostsTab = (tabId: string) =>
+    isPanelWindow
+      ? !mainWindowKeys.has(`browser:${tabId}`)
+      : !panelDetached || mainWindowKeys.has(`browser:${tabId}`);
+  const activeSessions = hostedBrowserSessions(
+    previewByThreadKey,
+    primaryEnvironmentId,
+    activatedTabIds,
+  );
+  const sessions = activeSessions.filter((session) => hostsTab(session.snapshot.tabId));
   const hostedElsewhereKey = activeSessions
     .filter((session) => !hostsTab(session.snapshot.tabId))
     .map((session) => session.runtimeTabId)
@@ -81,65 +167,6 @@ export function ElectronBrowserHost() {
       if (runtimeTabId.length > 0) handOffDesktopTab(runtimeTabId);
     }
   }, [hostedElsewhereKey]);
-
-  useEffect(() => {
-    const preview = window.desktopBridge?.preview;
-    if (!preview) return;
-
-    let lastSerializedTheme = "";
-    const syncTheme = () => {
-      const theme = readPreviewAnnotationTheme();
-      const serializedTheme = JSON.stringify(theme);
-      if (serializedTheme === lastSerializedTheme) return;
-      lastSerializedTheme = serializedTheme;
-      void preview.setAnnotationTheme(theme).catch(() => {
-        lastSerializedTheme = "";
-      });
-    };
-    const frameId = window.requestAnimationFrame(syncTheme);
-    const observer = new MutationObserver(syncTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "style"],
-    });
-    const headObserver = new MutationObserver(syncTheme);
-    headObserver.observe(document.head, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-    return () => {
-      window.cancelAnimationFrame(frameId);
-      observer.disconnect();
-      headObserver.disconnect();
-    };
-  }, []);
-
-  useEffect(() => {
-    const preview = window.desktopBridge?.preview;
-    if (!preview) return;
-    return preview.onPointerEvent((event) => {
-      useBrowserPointerStore.getState().apply(event);
-    });
-  }, []);
-
-  const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: true });
-  const onOpenLink = useEffectEvent(({ tabId, url, background }: DesktopPreviewOpenLinkEvent) => {
-    const source = sessions.find((session) => session.runtimeTabId === tabId);
-    if (!source) return;
-    void openUrlInPreview({
-      threadRef: source.threadRef,
-      url,
-      openPreview,
-      profileId: source.snapshot.profileId,
-      background,
-    });
-  });
-  useEffect(() => {
-    const preview = window.desktopBridge?.preview;
-    if (!preview) return;
-    return preview.onOpenLink(onOpenLink);
-  }, []);
 
   if (!isElectron) return null;
   return (
@@ -179,10 +206,7 @@ function AuthorizedBrowserWebview(props: ComponentProps<typeof HostedBrowserWebv
   return canOperatePreview ? <HostedBrowserWebview {...props} profileId={profileId} /> : null;
 }
 
-/**
- * It is latched once settings load: Electron fixes the partition when the guest attaches, so a
- * later settings change must not move a live tab.
- */
+// Latch after hydration: Electron fixes the partition when the guest attaches.
 function useTabProfileId(profileId: string | undefined): string | undefined {
   const hydrated = useClientSettingsHydrated();
   const defaultProfileId = useBrowserDefaults().profileId;

@@ -4,11 +4,7 @@ import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 export const BROWSER_PROFILE_NAME_MAX_LENGTH = 48;
 export const BROWSER_PROFILE_MAX_COUNT = 24;
 
-/**
- * Control characters are rejected because ids are folded into delimiter-joined
- * cache keys on the client; one carrying the delimiter would resolve to a
- * different profile's partition.
- */
+/** Control characters could collide with client cache-key delimiters and select another partition. */
 export const BrowserProfileId = TrimmedNonEmptyString.check(
   Schema.isMaxLength(64),
   Schema.isPattern(/^[^\p{Cc}]+$/u),
@@ -64,11 +60,9 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
 }
 
 /**
- * One distinct tab color per profile. Stored colors win in list order; the rest
- * start at a hash of their id (so adding a profile rarely recolors others) and
- * take the next free palette color. BROWSER_PROFILE_MAX_COUNT exceeds the palette,
- * so overflow profiles get golden-angle hues at alternating lightness, which stay
- * visibly apart from each other and from the palette.
+ * One distinct tab color per profile. Stored colors win; the rest start at a hash of their id (so
+ * adding a profile rarely recolors others) and take the next free palette color. Profiles beyond
+ * the palette get golden-angle hues at alternating lightness.
  */
 export function resolveBrowserProfileAccents(
   profiles: ReadonlyArray<Pick<BrowserProfile, "id" | "color">>,
@@ -118,13 +112,7 @@ export function isBuiltInBrowserProfileId(id: string): boolean {
   return BUILT_IN_BROWSER_PROFILES.some((profile) => profile.id === id);
 }
 
-/**
- * - Repeated ids, which map to one partition and would otherwise appear as
- *   two isolated identities sharing every cookie.
- * - `kind: "incognito"` on anything but the built-in, since persistence is
- *   keyed off that one id; such a profile is labelled ephemeral while its
- *   cookies survive restarts.
- */
+/** Deduplicates ids sharing a partition; only the built-in incognito id is actually ephemeral. */
 export function resolveBrowserProfiles(
   userProfiles: ReadonlyArray<BrowserProfile>,
 ): ReadonlyArray<BrowserProfile> {
