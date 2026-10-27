@@ -215,6 +215,8 @@ export const PreviewOpenInput = Schema.Struct({
   lazy: Schema.optional(Schema.Boolean),
   runtime: Schema.optional(PreviewRuntime),
   reveal: Schema.optional(Schema.Boolean),
+  /** A zoom of the tab's own, as a reopened tab had before the restart. */
+  zoomFactor: Schema.optional(PreviewZoomFactor),
 });
 export type PreviewOpenInput = typeof PreviewOpenInput.Type;
 
@@ -256,6 +258,8 @@ export const PreviewAdjustInput = Schema.Struct({
   tabId: PreviewTabId,
   colorScheme: Schema.optional(PreviewAppearancePreference),
   zoomFactor: Schema.optional(PreviewZoomFactor),
+  /** Forgets the tab's own zoom, so it follows the client's default zoom again. */
+  followDefaultZoom: Schema.optional(Schema.Boolean),
   hardReload: Schema.optional(Schema.Boolean),
   clear: Schema.optional(Schema.Literals(["cookies", "cache"])),
 });

@@ -916,10 +916,14 @@ const NET_ERROR_CODES: Readonly<Record<string, number>> = {
   ERR_ADDRESS_UNREACHABLE: -109,
   ERR_CERT_AUTHORITY_INVALID: -202,
   ERR_EMPTY_RESPONSE: -324,
+  ERR_HTTP2_PROTOCOL_ERROR: -337,
+  ERR_HTTP_RESPONSE_CODE_FAILURE: -379,
 };
 
+export const NET_ERROR_NAME = /ERR_[A-Z0-9_]+/;
+
 export const parseNetError = (errorText: string) => {
-  const description = /ERR_[A-Z_]+/.exec(errorText)?.[0] ?? errorText;
+  const description = NET_ERROR_NAME.exec(errorText)?.[0] ?? errorText;
   return { description, code: NET_ERROR_CODES[description] ?? -2 };
 };
 

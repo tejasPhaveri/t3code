@@ -23,6 +23,22 @@ const FAILURE_TITLES: Record<GitGraphAction["_tag"], string> = {
   StashApply: "Could not apply the stash",
   StashPop: "Could not pop the stash",
   StashDrop: "Could not drop the stash",
+  DeleteBranch: "Could not delete the branch",
+  RenameBranch: "Could not rename the branch",
+  Push: "Push failed",
+  Pull: "Pull stopped",
+  Rebase: "Rebase stopped",
+  Reset: "Could not reset",
+  CherryPick: "Cherry-pick stopped",
+  Revert: "Revert stopped",
+  DropCommit: "Could not drop the commit",
+  CreateTag: "Could not create the tag",
+  DeleteTag: "Could not delete the tag",
+  PushTag: "Could not push the tag",
+  CleanUntracked: "Could not clean untracked files",
+  AddRemote: "Could not add the remote",
+  EditRemote: "Could not change the remote",
+  RemoveRemote: "Could not remove the remote",
 };
 
 /** Git's own explanation (a hook's output, a conflict), not the generic RPC wrapper. */

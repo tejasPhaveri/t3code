@@ -3,11 +3,12 @@ import type { RunId, ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "./lib/storage";
+import { resolveSharedWindowStorage } from "./lib/storage";
 
 export type DiffPanelSelection =
   | { kind: "branch"; baseRef: string | null }
-  | { kind: "unstaged" }
+  // The reveal fields are absent on selections persisted before uncommitted files could be revealed.
+  | { kind: "unstaged"; filePath?: string; revealRequestId?: number }
   | { kind: "turn"; turnId: RunId; filePath: string | null; revealRequestId: number };
 
 const DEFAULT_SELECTION: DiffPanelSelection = { kind: "branch", baseRef: null };
@@ -18,6 +19,8 @@ interface DiffPanelStoreState {
   selectGitScope: (ref: ScopedThreadRef, scope: "branch" | "unstaged") => void;
   selectBranchBaseRef: (ref: ScopedThreadRef, baseRef: string | null) => void;
   selectTurn: (ref: ScopedThreadRef, turnId: RunId, filePath?: string) => void;
+  /** Shows uncommitted changes scrolled to `filePath`. */
+  revealUncommittedFile: (ref: ScopedThreadRef, filePath: string) => void;
   reconcileTurnSelection: (ref: ScopedThreadRef, availableTurnIds: ReadonlyArray<RunId>) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
@@ -85,6 +88,26 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
             },
           };
         }),
+      revealUncommittedFile: (ref, filePath) =>
+        set((state) => {
+          const threadKey = scopedThreadKey(ref);
+          const previous = state.byThreadKey[threadKey];
+          return {
+            byThreadKey: {
+              ...state.byThreadKey,
+              [threadKey]: {
+                kind: "unstaged",
+                filePath,
+                revealRequestId:
+                  previous?.kind === "unstaged" ? (previous.revealRequestId ?? 0) + 1 : 1,
+              },
+            },
+            branchBaseRefByThreadKey:
+              previous?.kind === "branch"
+                ? { ...state.branchBaseRefByThreadKey, [threadKey]: previous.baseRef }
+                : state.branchBaseRefByThreadKey,
+          };
+        }),
       reconcileTurnSelection: (ref, availableTurnIds) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
@@ -120,7 +143,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
       name: "t3code:diff-panel-state:v1",
       version: 2,
       storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+        resolveSharedWindowStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
       partialize: (state) => ({
         byThreadKey: state.byThreadKey,

@@ -145,9 +145,17 @@ import {
 import {
   GitGraphActionInput,
   GitGraphActionResult,
+  GitGraphCommitDetails,
+  GitGraphCommitInput,
+  GitGraphDiffInput,
+  GitGraphDiffResult,
   GitGraphError,
   GitGraphLogInput,
   GitGraphLogResult,
+  GitGraphRemotesInput,
+  GitGraphRemotesResult,
+  GitGraphTagDetails,
+  GitGraphTagInput,
   GitGraphWorktreesInput,
   GitGraphWorktreesResult,
 } from "./gitGraph.ts";
@@ -451,6 +459,10 @@ export const WS_METHODS = {
   gitGraphLog: "gitGraph.log",
   gitGraphWorktrees: "gitGraph.worktrees",
   gitGraphAction: "gitGraph.action",
+  gitGraphCommit: "gitGraph.commit",
+  gitGraphTag: "gitGraph.tag",
+  gitGraphDiff: "gitGraph.diff",
+  gitGraphRemotes: "gitGraph.remotes",
 
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewGetDiffFileContents: "review.getDiffFileContents",
@@ -1472,6 +1484,30 @@ const WsGitGraphActionRpc = Rpc.make(WS_METHODS.gitGraphAction, {
   error: Schema.Union([GitGraphError, EnvironmentAuthorizationError]),
 });
 
+const WsGitGraphCommitRpc = Rpc.make(WS_METHODS.gitGraphCommit, {
+  payload: GitGraphCommitInput,
+  success: GitGraphCommitDetails,
+  error: Schema.Union([GitGraphError, EnvironmentAuthorizationError]),
+});
+
+const WsGitGraphTagRpc = Rpc.make(WS_METHODS.gitGraphTag, {
+  payload: GitGraphTagInput,
+  success: GitGraphTagDetails,
+  error: Schema.Union([GitGraphError, EnvironmentAuthorizationError]),
+});
+
+const WsGitGraphDiffRpc = Rpc.make(WS_METHODS.gitGraphDiff, {
+  payload: GitGraphDiffInput,
+  success: GitGraphDiffResult,
+  error: Schema.Union([GitGraphError, EnvironmentAuthorizationError]),
+});
+
+const WsGitGraphRemotesRpc = Rpc.make(WS_METHODS.gitGraphRemotes, {
+  payload: GitGraphRemotesInput,
+  success: GitGraphRemotesResult,
+  error: Schema.Union([GitGraphError, EnvironmentAuthorizationError]),
+});
+
 const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPreview, {
   payload: ReviewDiffPreviewInput,
   success: ReviewDiffPreviewResult,
@@ -2067,6 +2103,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitGraphLogRpc,
   WsGitGraphWorktreesRpc,
   WsGitGraphActionRpc,
+  WsGitGraphCommitRpc,
+  WsGitGraphTagRpc,
+  WsGitGraphDiffRpc,
+  WsGitGraphRemotesRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
   WsTerminalOpenRpc,

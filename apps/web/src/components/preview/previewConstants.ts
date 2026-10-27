@@ -13,4 +13,6 @@ export const PREVIEW_ERROR_CODE_MESSAGES: Readonly<Record<string, string>> = Obj
   ERR_CERT_COMMON_NAME_INVALID: "Certificate hostname mismatch",
   ERR_CERT_DATE_INVALID: "Certificate is expired or not yet valid",
   ERR_TOO_MANY_REDIRECTS: "Too many redirects",
+  ERR_HTTP2_PROTOCOL_ERROR: "The site's server dropped the connection mid-response",
+  ERR_HTTP_RESPONSE_CODE_FAILURE: "The site returned an error with no page",
 });

@@ -42,6 +42,8 @@ export type BrowserImportFailureReason = typeof BrowserImportFailureReason.Type;
 export const BrowserImportSourceProfile = Schema.Struct({
   directory: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
+  /** The account the profile is signed into, when the browser records one. */
+  account: Schema.optional(TrimmedNonEmptyString),
   cookieCount: Schema.optional(Schema.Int),
 });
 export type BrowserImportSourceProfile = typeof BrowserImportSourceProfile.Type;
@@ -98,3 +100,25 @@ export const BROWSER_IMPORT_FAILURE_COPY: Readonly<Record<BrowserImportFailureRe
     "You've reached the profile limit. Delete a profile or import into an existing one.",
   readFailed: "The browser's cookie database could not be read.",
 };
+
+/** A browser profile on this computer whose bookmarks bar a T3 browser profile shows. */
+export const BrowserBookmarkSource = Schema.Struct({
+  sourceId: BrowserImportSourceId,
+  profileDirectory: TrimmedNonEmptyString,
+});
+export type BrowserBookmarkSource = typeof BrowserBookmarkSource.Type;
+
+/** A bookmark, or a folder of them when it has children. */
+export interface BrowserBookmark {
+  readonly name: string;
+  readonly url?: string;
+  readonly children?: ReadonlyArray<BrowserBookmark>;
+}
+
+export const BrowserBookmark: Schema.Codec<BrowserBookmark> = Schema.Struct({
+  name: Schema.String,
+  url: Schema.optionalKey(Schema.String),
+  children: Schema.optionalKey(
+    Schema.Array(Schema.suspend((): Schema.Codec<BrowserBookmark> => BrowserBookmark)),
+  ),
+});

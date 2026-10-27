@@ -208,6 +208,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
           ? { automationOwner: input.automationOwner }
           : {}),
         ...(input.reveal === undefined ? {} : { reveal: input.reveal }),
+        ...(input.zoomFactor === undefined ? {} : { zoomFactor: input.zoomFactor }),
         updatedAt,
       };
       yield* SynchronizedRef.modifyEffect(stateRef, (state) =>
@@ -355,8 +356,9 @@ export const make = Effect.gen(function* PreviewManagerMake() {
         input.tabId,
         Effect.fn("PreviewManager.adjustSession")(function* (session) {
           const updatedAt = yield* currentIsoTimestamp;
+          const { zoomFactor: _ownZoom, ...withoutZoom } = session.snapshot;
           const snapshot: PreviewSessionSnapshot = {
-            ...session.snapshot,
+            ...(input.followDefaultZoom ? withoutZoom : session.snapshot),
             ...(input.colorScheme === undefined ? {} : { colorScheme: input.colorScheme }),
             ...(input.zoomFactor === undefined ? {} : { zoomFactor: input.zoomFactor }),
             updatedAt,

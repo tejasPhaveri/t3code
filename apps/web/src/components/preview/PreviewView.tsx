@@ -83,6 +83,7 @@ import {
   useBrowserDefaults,
 } from "~/browser/browserDefaults";
 import { BrowserDeviceToolbar } from "~/browser/BrowserDeviceToolbar";
+import { BrowserBookmarksBar } from "./BrowserBookmarksBar";
 import { BROWSER_DEVICE_TOOLBAR_HEIGHT } from "~/browser/browserViewportLayout";
 import { useBrowserLayoutZoomFactor } from "~/browser/useBrowserLayoutZoomFactor";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
@@ -1064,6 +1065,10 @@ export function PreviewView({
             />
           ) : null
         }
+      />
+      <BrowserBookmarksBar
+        profileId={activeProfileId}
+        onOpen={(next) => void handleSubmitUrl(next)}
       />
 
       <div ref={serverBodyRef} className="relative min-h-0 flex-1 overflow-hidden">

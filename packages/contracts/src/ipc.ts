@@ -5,6 +5,8 @@ import { SnapShotSource } from "./chatAttachment.ts";
 import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
+  BrowserBookmark,
+  BrowserBookmarkSource,
   BrowserImportResult,
   BrowserImportSource,
   BrowserImportSourceId,
@@ -1188,6 +1190,12 @@ export interface DesktopPreviewBridge {
     profileId?: string,
   ) => Promise<DesktopPreviewWebviewConfig>;
   listBrowserImportSources: () => Promise<ReadonlyArray<BrowserImportSource>>;
+  /** Browsers whose bookmarks can be shown, listed even while they run. Older shells omit it. */
+  listBrowserBookmarkSources?: () => Promise<ReadonlyArray<BrowserImportSource>>;
+  /** The source profile's bookmarks bar, or null when it cannot be read. */
+  readBrowserBookmarks?: (
+    source: BrowserBookmarkSource,
+  ) => Promise<ReadonlyArray<BrowserBookmark> | null>;
   importBrowserCookies: (input: {
     readonly environmentId: EnvironmentId;
     readonly sourceId: BrowserImportSourceId;

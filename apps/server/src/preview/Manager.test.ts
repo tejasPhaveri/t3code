@@ -67,7 +67,7 @@ it.layer(layer)("PreviewManager", (it) => {
     }),
   );
 
-  it.effect("opens a restored lazy tab at its saved page without claiming to load", () =>
+  it.effect("opens a restored lazy tab at its saved page and zoom without claiming to load", () =>
     Effect.gen(function* () {
       const threadId = freshThreadId();
       const manager = yield* PreviewManager.PreviewManager;
@@ -77,9 +77,11 @@ it.layer(layer)("PreviewManager", (it) => {
         url: "https://staging.example.com/admin?role=owner",
         title: "Admin",
         lazy: true,
+        zoomFactor: 1.25,
       });
 
       expect(snapshot.lazy).toBe(true);
+      expect(snapshot.zoomFactor).toBe(1.25);
       expect(snapshot.navStatus).toEqual({
         _tag: "Success",
         url: "https://staging.example.com/admin?role=owner",
@@ -331,6 +333,24 @@ it.layer(layer)("PreviewManager", (it) => {
       const environmentIds = environment.sessions.map((session) => session.tabId);
       expect(environmentIds).toContain(shared.tabId);
       expect(environmentIds).not.toContain(isolated.tabId);
+    }),
+  );
+
+  it.effect("forgets a tab's own zoom so it follows the default again", () =>
+    Effect.gen(function* () {
+      const threadId = freshThreadId();
+      const manager = yield* PreviewManager.PreviewManager;
+      const opened = yield* manager.open({ threadId, url: "localhost:5173" });
+
+      const zoomed = yield* manager.adjust({ threadId, tabId: opened.tabId, zoomFactor: 1.25 });
+      expect(zoomed.zoomFactor).toBe(1.25);
+
+      const following = yield* manager.adjust({
+        threadId,
+        tabId: opened.tabId,
+        followDefaultZoom: true,
+      });
+      expect(following.zoomFactor).toBeUndefined();
     }),
   );
 

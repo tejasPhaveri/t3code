@@ -6,7 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
-import type { GitCommandError } from "@t3tools/contracts";
+import type { GitCommandError, GitGraphAction } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -16,9 +16,14 @@ import {
   countPorcelainEntries,
   GitGraphService,
   layer as gitGraphLayer,
+  mergeGitGraphDiffFiles,
   parseFetchPrunedRefs,
+  parseGitGraphCommitBody,
   parseGitGraphLog,
+  parseGitGraphNameStatus,
+  parseGitGraphNumstat,
   parseGitGraphRefs,
+  parseGitGraphSignature,
   parseGitGraphStashes,
   parseGitStatusV2,
   parseGitWorktreeList,
@@ -125,6 +130,64 @@ describe("parsers", () => {
       { path: "/repo", head: "5d97", branch: "main" },
       { path: "/repo-wt", head: "5d98", branch: null },
     ]);
+  });
+
+  it("splits a commit's message into subject and body", () => {
+    assert.deepStrictEqual(
+      parseGitGraphCommitBody("subject line\n\nbody one\nbody two\n\nRefs: #12\n"),
+      { subject: "subject line", body: "body one\nbody two\n\nRefs: #12" },
+    );
+    assert.deepStrictEqual(parseGitGraphCommitBody("only a subject\n"), {
+      subject: "only a subject",
+      body: "",
+    });
+    // A message with no blank line after the subject still has a body.
+    assert.deepStrictEqual(parseGitGraphCommitBody("subject\nbody\n"), {
+      subject: "subject",
+      body: "body",
+    });
+  });
+
+  it("keeps a signed commit's signature and drops the `N` git reports for an unsigned one", () => {
+    assert.deepStrictEqual(parseGitGraphSignature("G", "Tester", "ABCD"), {
+      code: "G",
+      signer: "Tester",
+      key: "ABCD",
+    });
+    assert.isNull(parseGitGraphSignature("N", "", ""));
+    assert.isNull(parseGitGraphSignature("", "", ""));
+  });
+
+  it("reads a numstat rename as its own path pair, not an extra file", () => {
+    const stdout = [
+      "1\t1\ta.txt",
+      "-\t-\tbin.dat",
+      "0\t0\t", // a rename has an empty path, then its source and destination as fields
+      "d/b.txt",
+      "d/c.txt",
+      "",
+    ].join("\0");
+    assert.deepStrictEqual(parseGitGraphNumstat(stdout), [
+      { path: "a.txt", oldPath: null, additions: 1, deletions: 1, binary: false },
+      { path: "bin.dat", oldPath: null, additions: 0, deletions: 0, binary: true },
+      { path: "d/c.txt", oldPath: "d/b.txt", additions: 0, deletions: 0, binary: false },
+    ]);
+  });
+
+  it("pairs name-status kinds by path so a rename keeps its status and counts", () => {
+    const numstat = ["1\t1\ta.txt", "-\t-\tbin.dat", "0\t0\t", "d/b.txt", "d/c.txt", ""].join("\0");
+    const nameStatus = ["M", "a.txt", "A", "bin.dat", "R100", "d/b.txt", "d/c.txt", ""].join("\0");
+    assert.deepStrictEqual(
+      mergeGitGraphDiffFiles(
+        parseGitGraphNumstat(numstat),
+        parseGitGraphNameStatus(nameStatus),
+      ).map((file) => [file.path, file.oldPath, file.status, file.additions, file.binary]),
+      [
+        ["a.txt", null, "modified", 1, false],
+        ["bin.dat", null, "added", 0, true],
+        ["d/c.txt", "d/b.txt", "renamed", 0, false],
+      ],
+    );
   });
 });
 
@@ -414,6 +477,394 @@ describe("GitGraphService", () => {
           .action({ cwd: repo, worktreePath: unrelated, action: { _tag: "Fetch" } })
           .pipe(Effect.exit);
         assert.isTrue(Exit.isFailure(exit));
+      }),
+    ),
+  );
+
+  it.live("reads a commit's message, author and changed files", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const graph = yield* GitGraphService;
+        yield* fs.writeFileString(path.join(repo, "a.txt"), "two\n");
+        yield* fs.writeFileString(path.join(repo, "new.txt"), "new\n");
+        yield* git(["add", "-A"]);
+        yield* git(["commit", "-q", "-m", "change a\n\nWhy it changed.\n\nRefs: #7"]);
+
+        const head = (yield* git(["rev-parse", "HEAD"])).trim();
+        const details = yield* graph.commit({ cwd: repo, hash: head });
+        assert.deepStrictEqual(
+          [details.subject, details.body, details.author, details.parents.length],
+          ["change a", "Why it changed.\n\nRefs: #7", "Tester", 1],
+        );
+        assert.deepStrictEqual(
+          details.files.map((file) => [file.path, file.status, file.additions, file.deletions]),
+          [
+            ["a.txt", "modified", 1, 1],
+            ["new.txt", "added", 1, 0],
+          ],
+        );
+        // An unsigned repository reports no signature rather than a blank one.
+        assert.isNull(details.signature);
+
+        // The root commit is compared with the empty tree, so everything is an addition.
+        const root = yield* graph.commit({ cwd: repo, hash: "HEAD~1" });
+        assert.deepStrictEqual(
+          root.files.map((file) => [file.path, file.status, file.additions]),
+          [["a.txt", "added", 1]],
+        );
+      }),
+    ),
+  );
+
+  it.live("compares a commit, two refs, and the working tree including untracked files", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const graph = yield* GitGraphService;
+        const root = (yield* git(["rev-parse", "HEAD"])).trim();
+        yield* fs.writeFileString(path.join(repo, "a.txt"), "two\n");
+        yield* git(["commit", "-q", "-am", "second"]);
+
+        const commitDiff = yield* graph.diff({
+          cwd: repo,
+          target: { _tag: "commit", hash: "HEAD" },
+        });
+        assert.deepStrictEqual(
+          commitDiff.files.map((file) => [file.path, file.additions, file.deletions]),
+          [["a.txt", 1, 1]],
+        );
+        assert.include(commitDiff.patch, "--- a/a.txt");
+        assert.include(commitDiff.patch, "+two");
+
+        const rangeDiff = yield* graph.diff({
+          cwd: repo,
+          target: { _tag: "range", baseRef: root, headRef: "HEAD" },
+        });
+        assert.deepStrictEqual(
+          rangeDiff.files.map((file) => file.path),
+          ["a.txt"],
+        );
+
+        // Untracked files are part of what is uncommitted, so they must show up here.
+        yield* fs.writeFileString(path.join(repo, "untracked.txt"), "u1\nu2\n");
+        const worktreeDiff = yield* graph.diff({
+          cwd: repo,
+          target: { _tag: "worktree", baseRef: "HEAD" },
+        });
+        assert.deepStrictEqual(
+          worktreeDiff.files.map((file) => [file.path, file.status, file.additions]),
+          [["untracked.txt", "added", 2]],
+        );
+        assert.include(worktreeDiff.patch, "+u2");
+        // Reading the comparison must not have changed the checkout's own index.
+        const status = (yield* git(["status", "--porcelain"])).trim();
+        assert.strictEqual(status, "?? untracked.txt");
+      }),
+    ),
+  );
+
+  it.live("reads annotated and lightweight tags", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const graph = yield* GitGraphService;
+        const head = (yield* git(["rev-parse", "HEAD"])).trim();
+        yield* git(["tag", "light", head]);
+        yield* git(["tag", "-a", "v1", "-m", "release one", head]);
+
+        const annotated = yield* graph.tag({ cwd: repo, name: "v1" });
+        assert.deepStrictEqual(
+          [annotated.annotated, annotated.hash, annotated.tagger, annotated.message],
+          [true, head, "Tester", "release one"],
+        );
+
+        const lightweight = yield* graph.tag({ cwd: repo, name: "light" });
+        assert.deepStrictEqual(
+          [lightweight.annotated, lightweight.hash, lightweight.tagger, lightweight.message],
+          [false, head, null, ""],
+        );
+
+        const missing = yield* graph.tag({ cwd: repo, name: "nope" }).pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(missing));
+      }),
+    ),
+  );
+
+  it.live("deletes, renames, resets, cherry-picks, reverts and drops commits", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const graph = yield* GitGraphService;
+        // Scoped to the checked-out branch, so a commit left behind on another ref stays out.
+        const subjects = () =>
+          graph.worktrees({ cwd: repo }).pipe(
+            Effect.flatMap((result) =>
+              graph.log({
+                cwd: repo,
+                maxCount: 10,
+                showRemoteBranches: false,
+                refs: [`refs/heads/${result.worktrees[0]!.branch ?? "HEAD"}`],
+              }),
+            ),
+            Effect.map((result) => result.commits.map((commit) => commit.subject)),
+          );
+        const act = (action: GitGraphAction) => graph.action({ cwd: repo, action });
+        const currentBranch = () =>
+          graph.worktrees({ cwd: repo }).pipe(Effect.map((result) => result.worktrees[0]!.branch));
+
+        yield* act({ _tag: "CreateBranch", name: "keep", startPoint: "HEAD", checkout: false });
+        yield* act({ _tag: "RenameBranch", name: "keep", newName: "keepers" });
+        yield* fs.writeFileString(path.join(repo, "b.txt"), "b\n");
+        yield* git(["add", "b.txt"]);
+        yield* git(["commit", "-q", "-m", "add b"]);
+        yield* act({ _tag: "Checkout", ref: "refs/heads/keepers" });
+        yield* act({ _tag: "DeleteBranch", name: "main", force: true });
+        assert.strictEqual(yield* currentBranch(), "keepers");
+        // `keep` was cut at the root commit, so `add b` (made on `main`) is not on this branch.
+        assert.deepStrictEqual(yield* subjects(), ["root"]);
+
+        // A commit is dropped by replaying everything after it onto its parent.
+        yield* fs.writeFileString(path.join(repo, "c.txt"), "c\n");
+        yield* git(["add", "c.txt"]);
+        yield* git(["commit", "-q", "-m", "add c"]);
+        yield* fs.writeFileString(path.join(repo, "d.txt"), "d\n");
+        yield* git(["add", "d.txt"]);
+        yield* git(["commit", "-q", "-m", "add d"]);
+        const middle = (yield* git(["rev-parse", "HEAD~1"])).trim();
+        yield* act({ _tag: "DropCommit", hash: middle });
+        assert.deepStrictEqual(yield* subjects(), ["add d", "root"]);
+        assert.isFalse(yield* fs.exists(path.join(repo, "c.txt")));
+
+        // Reverting a commit puts its change back the other way.
+        yield* act({ _tag: "Revert", hash: "HEAD" });
+        assert.deepStrictEqual(yield* subjects(), ['Revert "add d"', "add d", "root"]);
+
+        // Cherry-picking replays a commit onto the checked-out branch.
+        const addD = (yield* git(["rev-parse", "HEAD~1"])).trim();
+        yield* act({ _tag: "Checkout", ref: "HEAD~2" });
+        yield* act({ _tag: "CreateBranch", name: "pick", startPoint: "HEAD", checkout: true });
+        yield* act({ _tag: "CherryPick", hash: addD });
+        assert.deepStrictEqual(yield* subjects(), ["add d", "root"]);
+        assert.isTrue(yield* fs.exists(path.join(repo, "d.txt")));
+
+        yield* act({ _tag: "Reset", ref: "HEAD~1", mode: "hard" });
+        assert.deepStrictEqual(yield* subjects(), ["root"]);
+        assert.isFalse(yield* fs.exists(path.join(repo, "d.txt")));
+      }),
+    ),
+  );
+
+  it.live("refuses to drop a commit that is not on the checked-out branch", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const graph = yield* GitGraphService;
+        yield* git(["switch", "-q", "-c", "other"]);
+        yield* git(["commit", "-q", "--allow-empty", "-m", "elsewhere"]);
+        const elsewhere = (yield* git(["rev-parse", "HEAD"])).trim();
+        yield* git(["switch", "-q", "main"]);
+
+        const dropped = yield* graph
+          .action({ cwd: repo, action: { _tag: "DropCommit", hash: elsewhere } })
+          .pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(dropped));
+        // The other branch still has its commit.
+        assert.strictEqual((yield* git(["rev-parse", "other"])).trim(), elsewhere);
+      }),
+    ),
+  );
+
+  it.live("creates, pushes and deletes a tag, rejecting an invalid name", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const graph = yield* GitGraphService;
+        const head = (yield* git(["rev-parse", "HEAD"])).trim();
+        yield* graph.action({
+          cwd: repo,
+          action: { _tag: "CreateTag", name: "v1", hash: head, push: false },
+        });
+        assert.strictEqual((yield* git(["tag", "--list", "v1"])).trim(), "v1");
+
+        const invalid = yield* graph
+          .action({
+            cwd: repo,
+            action: { _tag: "CreateTag", name: "bad..name", hash: head, push: false },
+          })
+          .pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(invalid));
+
+        yield* graph.action({ cwd: repo, action: { _tag: "DeleteTag", name: "v1" } });
+        assert.strictEqual((yield* git(["tag", "--list"])).trim(), "");
+      }),
+    ),
+  );
+
+  it.live("lists, adds, edits and removes remotes", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const graph = yield* GitGraphService;
+        yield* git(["remote", "add", "origin", "https://example.com/origin.git"]);
+
+        const listed = (yield* graph.remotes({ cwd: repo })).remotes;
+        assert.deepStrictEqual(listed, [
+          {
+            name: "origin",
+            fetchUrl: "https://example.com/origin.git",
+            pushUrl: "https://example.com/origin.git",
+          },
+        ]);
+
+        yield* graph.action({
+          cwd: repo,
+          action: { _tag: "AddRemote", name: "up", url: "https://example.com/up.git" },
+        });
+        yield* graph.action({
+          cwd: repo,
+          action: { _tag: "EditRemote", name: "up", url: "https://example.com/other.git" },
+        });
+        assert.deepStrictEqual(
+          (yield* graph.remotes({ cwd: repo })).remotes.map((remote) => [
+            remote.name,
+            remote.fetchUrl,
+          ]),
+          [
+            ["origin", "https://example.com/origin.git"],
+            ["up", "https://example.com/other.git"],
+          ],
+        );
+
+        const bad = yield* graph
+          .action({
+            cwd: repo,
+            action: { _tag: "AddRemote", name: "bad name", url: "https://x/y.git" },
+          })
+          .pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(bad));
+
+        yield* graph.action({ cwd: repo, action: { _tag: "RemoveRemote", name: "up" } });
+        assert.deepStrictEqual(
+          (yield* graph.remotes({ cwd: repo })).remotes.map((remote) => remote.name),
+          ["origin"],
+        );
+      }),
+    ),
+  );
+
+  it.live("reads a merge commit's changes against its first parent", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const graph = yield* GitGraphService;
+        const root = (yield* git(["rev-parse", "HEAD"])).trim();
+        yield* git(["switch", "-q", "-c", "side"]);
+        yield* fs.writeFileString(path.join(repo, "side.txt"), "s\n");
+        yield* git(["add", "side.txt"]);
+        yield* git(["commit", "-q", "-m", "side change"]);
+        yield* git(["switch", "-q", "main"]);
+        yield* git(["merge", "-q", "--no-ff", "-m", "merge side", "side"]);
+
+        // `diff-tree` prints nothing for a merge unless told which parent to compare with.
+        const merge = yield* graph.commit({ cwd: repo, hash: "HEAD" });
+        assert.deepStrictEqual(
+          merge.files.map((file) => [file.path, file.status, file.additions]),
+          [["side.txt", "added", 1]],
+        );
+        assert.strictEqual(merge.parents.length, 2);
+        assert.notStrictEqual(merge.parents[1], root);
+      }),
+    ),
+  );
+
+  it.live("an explicit ref selection does not pull in the checked-out branch", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const graph = yield* GitGraphService;
+        yield* git(["switch", "-q", "-c", "unrelated"]);
+        yield* fs.writeFileString(path.join(repo, "u.txt"), "u\n");
+        yield* git(["add", "u.txt"]);
+        yield* git(["commit", "-q", "-m", "unrelated work"]);
+        yield* git(["switch", "-q", "main"]);
+
+        const filtered = yield* graph.log({
+          cwd: repo,
+          maxCount: 20,
+          showRemoteBranches: false,
+          refs: ["refs/heads/main"],
+        });
+        assert.deepStrictEqual(
+          filtered.commits.map((commit) => commit.subject),
+          ["root"],
+        );
+        // With no selection the whole graph is shown, as before.
+        const all = yield* graph.log({ cwd: repo, maxCount: 20, showRemoteBranches: false });
+        assert.include(
+          all.commits.map((commit) => commit.subject),
+          "unrelated work",
+        );
+      }),
+    ),
+  );
+
+  it.live("honours the log order and the first-parent option", () =>
+    withRepo(({ repo, git }) =>
+      Effect.gen(function* () {
+        const graph = yield* GitGraphService;
+        yield* git(["switch", "-q", "-c", "side"]);
+        yield* git(["commit", "-q", "--allow-empty", "-m", "side work"]);
+        yield* git(["switch", "-q", "main"]);
+        yield* git(["commit", "-q", "--allow-empty", "-m", "main work"]);
+        yield* git(["merge", "-q", "--no-ff", "-m", "merge side", "side"]);
+
+        const full = yield* graph.log({ cwd: repo, maxCount: 20, showRemoteBranches: false });
+        assert.include(
+          full.commits.map((commit) => commit.subject),
+          "side work",
+        );
+
+        const firstParent = yield* graph.log({
+          cwd: repo,
+          maxCount: 20,
+          showRemoteBranches: false,
+          firstParent: true,
+        });
+        // `--first-parent` applies to each start point, so the side branch's own tip still
+        // brings its commits in; only the traversal from `main` is limited to first parents.
+        assert.deepStrictEqual(
+          firstParent.commits.map((commit) => commit.subject),
+          ["merge side", "main work", "side work", "root"],
+        );
+
+        const firstParentOfHead = yield* graph.log({
+          cwd: repo,
+          maxCount: 20,
+          showRemoteBranches: false,
+          firstParent: true,
+          refs: ["refs/heads/main"],
+        });
+        assert.deepStrictEqual(
+          firstParentOfHead.commits.map((commit) => commit.subject),
+          ["merge side", "main work", "root"],
+        );
+
+        const topological = yield* graph.log({
+          cwd: repo,
+          maxCount: 20,
+          showRemoteBranches: false,
+          order: "topo",
+        });
+        // Topological order never puts a parent before its child.
+        const seen = new Set<string>();
+        for (const commit of topological.commits) {
+          for (const parent of commit.parents) {
+            assert.isFalse(seen.has(parent), `${parent} came before its child`);
+          }
+          seen.add(commit.hash);
+        }
       }),
     ),
   );

@@ -7,6 +7,7 @@ import {
   type BrowserPersistence,
   type PreviewSessionSnapshot,
   type PreviewViewportSetting,
+  type PreviewZoomFactor,
   ProjectId,
   type ScopedThreadRef,
   ThreadId,
@@ -149,13 +150,17 @@ export function previewOpenScope(input: {
   };
 }
 
-/** A tab as saved between runs: exactly what reopening it needs, nothing tied to this run. */
+/** A tab as saved between runs: what reopening it needs, and the id it had. */
 export interface SavedBrowserTab {
   readonly url: string;
   readonly title?: string;
   readonly profileId?: string;
   readonly isolated?: true;
   readonly viewport?: PreviewViewportSetting;
+  /** A zoom picked for this tab; without one it follows the default zoom. */
+  readonly zoomFactor?: PreviewZoomFactor;
+  /** Its id when saved. Ids do not outlive a server, so the reopened tab takes over this one's place. */
+  readonly tabId?: string;
 }
 
 /**
@@ -204,6 +209,8 @@ function savedBrowserTabOf(snapshot: PreviewSessionSnapshot): SavedBrowserTab | 
     ...(snapshot.profileId === undefined ? {} : { profileId: snapshot.profileId }),
     ...(snapshot.isolated === true ? { isolated: true as const } : {}),
     ...(snapshot.viewport === undefined ? {} : { viewport: snapshot.viewport }),
+    ...(snapshot.zoomFactor === undefined ? {} : { zoomFactor: snapshot.zoomFactor }),
+    tabId: snapshot.tabId,
   };
 }
 

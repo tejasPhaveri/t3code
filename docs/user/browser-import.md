@@ -18,3 +18,11 @@ the import wizard afterward. You can revoke Full Disk Access once the import is 
 On Windows, import supports Firefox and Helium profiles that use standard profile encryption.
 Other Chromium-based browsers use app-bound encryption and cannot be imported. Partitioned cookies
 are skipped on all platforms.
+
+## Show another browser's bookmarks
+
+A browser profile can show the bookmarks bar of a Chrome, Edge, Brave, Arc or other Chromium-based
+browser profile on the same computer. In **Settings → Integrations → Browser profiles**, open a
+profile's **⋯** menu and choose one under **Bookmarks bar**, or **Off** to hide it. The bar shows
+under the address bar of that profile's tabs, follows bookmarks you add in the other browser when
+you return to T3 Code, and works while that browser is open. Bookmarklets are left out.

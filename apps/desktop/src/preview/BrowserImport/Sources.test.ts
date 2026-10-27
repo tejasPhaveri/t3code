@@ -239,11 +239,11 @@ describe("listSourceProfiles", () => {
         const context = yield* withSourceHome();
         yield* fileSystem.writeFileString(
           `${userDataDirectory(context)}/Local State`,
-          `{"profile":{"info_cache":{"Default":{"name":"You"},"Profile 2":{"name":"  "}}}}`,
+          `{"profile":{"info_cache":{"Default":{"name":"You","user_name":"you@example.com"},"Profile 2":{"name":"  ","user_name":""}}}}`,
         );
 
         assert.deepEqual(yield* listSourceProfiles(helium, context), [
-          { directory: "Default", name: "You" },
+          { directory: "Default", name: "You", account: "you@example.com" },
           { directory: "Profile 2", name: "Profile 2" },
         ]);
       }),

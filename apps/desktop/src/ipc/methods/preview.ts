@@ -12,6 +12,8 @@ import {
   DesktopPreviewSetColorSchemeInputSchema,
   DesktopPreviewSetZoomFactorInputSchema,
   BrowserImportResult,
+  BrowserBookmark,
+  BrowserBookmarkSource,
   BrowserImportSource,
   DesktopPreviewClearDataInputSchema,
   DesktopPreviewImportCookiesInputSchema,
@@ -334,6 +336,26 @@ export const listBrowserImportSources = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.preview.listBrowserImportSources")(function* () {
     const browserImport = yield* BrowserImport.BrowserImport;
     return yield* browserImport.listSources;
+  }),
+});
+
+export const listBrowserBookmarkSources = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_BOOKMARK_SOURCES_CHANNEL,
+  payload: Schema.Void,
+  result: Schema.Array(BrowserImportSource),
+  handler: Effect.fn("desktop.ipc.preview.listBrowserBookmarkSources")(function* () {
+    const browserImport = yield* BrowserImport.BrowserImport;
+    return yield* browserImport.listBookmarkSources;
+  }),
+});
+
+export const readBrowserBookmarks = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_READ_BOOKMARKS_CHANNEL,
+  payload: BrowserBookmarkSource,
+  result: Schema.NullOr(Schema.Array(BrowserBookmark)),
+  handler: Effect.fn("desktop.ipc.preview.readBrowserBookmarks")(function* (source) {
+    const browserImport = yield* BrowserImport.BrowserImport;
+    return yield* browserImport.readBookmarks(source);
   }),
 });
 

@@ -8,7 +8,7 @@ import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { readPreparedConnection } from "~/state/session";
 
 import { isLocalLoopbackHost, normalizeHostname } from "./browser/browserTargetResolver";
-import { resolveStorage } from "./lib/storage";
+import { resolveSharedWindowStorage } from "./lib/storage";
 
 export type BrowserHistoryEntry = { url: string; lastVisitedAt: number; title?: string };
 
@@ -280,7 +280,7 @@ export const useBrowserHistoryStore = create<BrowserHistoryStoreState>()(
       name: BROWSER_HISTORY_STORAGE_KEY,
       version: 1,
       storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+        resolveSharedWindowStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
       partialize: (state) => ({
         byProjectKey: state.byProjectKey,

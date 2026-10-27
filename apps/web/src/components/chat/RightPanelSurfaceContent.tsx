@@ -81,7 +81,14 @@ export function RightPanelSurfaceContent(props: {
   readonly terminal: RightPanelTerminalProps;
   readonly pullRequest: RightPanelPullRequestProps;
   readonly files: RightPanelFileProps;
-  readonly gitGraph: { readonly cwd: string | null; readonly projectId: string | null };
+  readonly gitGraph: {
+    readonly cwd: string | null;
+    readonly projectId: string | null;
+    /** Opens the uncommitted diff at a repository-relative path. */
+    readonly onOpenDiff: (filePath: string) => void;
+    /** Opens a workspace-relative path in a file tab. */
+    readonly onOpenFile: (relativePath: string) => void;
+  };
 }) {
   const { surface, threadRef, visible } = props;
   if (surface === null) return null;
@@ -121,6 +128,8 @@ export function RightPanelSurfaceContent(props: {
             cwd={props.gitGraph.cwd}
             projectId={props.gitGraph.projectId}
             visible={visible}
+            onOpenDiff={props.gitGraph.onOpenDiff}
+            onOpenFile={props.gitGraph.onOpenFile}
           />
         </Suspense>
       );

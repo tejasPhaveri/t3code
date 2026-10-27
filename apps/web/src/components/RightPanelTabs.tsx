@@ -10,6 +10,7 @@ import type {
   ContextMenuItem,
   EnvironmentId,
   PreviewSessionSnapshot,
+  PreviewZoomFactor,
   ProjectId,
   PullRequestState,
   ResolvedKeybindingsConfig,
@@ -141,6 +142,9 @@ export interface RightPanelTabsProps {
   /** Opens a tab that stays in this chat when browser tabs are otherwise shared. */
   onAddIsolatedBrowser?: () => void;
   onDuplicateBrowser?: (surface: RightPanelSurface) => void;
+  /** A zoom for one browser tab, or null to have it follow the default zoom again. */
+  onSetBrowserZoom?: (surface: RightPanelSurface, zoomFactor: PreviewZoomFactor | null) => void;
+  defaultBrowserZoom?: number;
   /** Present while the panel is split across two windows. */
   onMoveToOtherWindow?: { label: string; onMove: (surface: RightPanelSurface) => void };
   onAddTerminal: () => void;
@@ -220,12 +224,18 @@ type TabContextMenuAction =
   | "duplicate"
   | "isolate"
   | "move-window"
+  | "zoom-default"
+  | `zoom:${number}`
   | "close"
   | "close-others"
   | "close-to-right"
   | "close-all";
 
 const TAB_SCROLL_EDGE_TOLERANCE = 1;
+const TAB_ZOOM_LEVELS = [
+  0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2,
+] as const satisfies readonly PreviewZoomFactor[];
+const zoomPercent = (zoomFactor: number) => `${Math.round(zoomFactor * 100)}%`;
 const TAB_DRAG_MODIFIERS = [restrictToHorizontalAxis, restrictToFirstScrollableAncestor];
 
 function tabScrollViewport(root: HTMLDivElement | null): HTMLDivElement | null {
@@ -1220,6 +1230,29 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     if (surface.kind === "preview" && props.onAddIsolatedBrowser) {
       items.push({ id: "isolate", label: "New isolated tab" });
     }
+    const menuSnapshot = menuPreviewTabId ? props.previewSessions[menuPreviewTabId] : undefined;
+    if (menuSnapshot && props.onSetBrowserZoom) {
+      // A server tab records a zoom only once one is chosen; until then it follows the default.
+      const ownZoom =
+        menuSnapshot.runtime === "server" ? menuSnapshot.zoomFactor : menuOverlay?.zoomFactor;
+      items.push({
+        id: "zoom-default",
+        label: "Zoom",
+        children: [
+          {
+            id: "zoom-default",
+            label: `Default zoom (${zoomPercent(props.defaultBrowserZoom ?? 1)})`,
+            checked: ownZoom === undefined,
+          },
+          ...TAB_ZOOM_LEVELS.map((level) => ({
+            id: `zoom:${level}` as const,
+            label: zoomPercent(level),
+            checked: ownZoom === level,
+            separatorBefore: level === TAB_ZOOM_LEVELS[0],
+          })),
+        ],
+      });
+    }
     if (props.onMoveToOtherWindow) {
       items.push({ id: "move-window", label: props.onMoveToOtherWindow.label });
     }
@@ -1252,6 +1285,15 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     );
 
     const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
+    if (action === "zoom-default") {
+      props.onSetBrowserZoom?.(surface, null);
+      return;
+    }
+    const zoomLevel = TAB_ZOOM_LEVELS.find((level) => action === `zoom:${level}`);
+    if (zoomLevel !== undefined) {
+      props.onSetBrowserZoom?.(surface, zoomLevel);
+      return;
+    }
     switch (action) {
       case "rename":
         setRenamingDevice(surface.id);

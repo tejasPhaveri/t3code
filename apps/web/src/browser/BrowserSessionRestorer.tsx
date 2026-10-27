@@ -26,6 +26,7 @@ import {
 import { applyPreviewServerSnapshot, useActivePreviewSessions } from "~/previewStateStore";
 import { selectThreadRightPanelState, useRightPanelStore } from "~/rightPanelStore";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { useSharedTabOrderStore } from "~/sharedTabOrder";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -121,8 +122,9 @@ export function browserProjectSetupKey(environmentId: EnvironmentId, projectId: 
 
 /**
  * Opens the given tabs in a scope unless an equal tab (same profile and page) is
- * already open there, in order and lazily. Resolves false when the scope's open
- * tabs could not be read, so nothing is opened twice.
+ * already open there, in order and lazily. Resolves to the new id of each reopened
+ * tab, by the id it was saved with, or null when the scope's open tabs could not
+ * be read, so nothing is opened twice.
  */
 export async function openMissingBrowserTabs(input: {
   readonly openPreview: Parameters<typeof openPreviewSession>[0]["openPreview"];
@@ -131,7 +133,7 @@ export async function openMissingBrowserTabs(input: {
   readonly persistence: BrowserPersistence;
   readonly scopeKey: string;
   readonly tabs: readonly SavedBrowserTab[];
-}): Promise<boolean> {
+}): Promise<ReadonlyMap<string, string> | null> {
   const { threadRef, projectId, persistence } = input;
   const listed = await readScopeSessions({
     environmentId: threadRef.environmentId,
@@ -139,7 +141,7 @@ export async function openMissingBrowserTabs(input: {
     projectId,
     persistence,
   });
-  if (!listed) return false;
+  if (!listed) return null;
   // After a window reload the server still has these; show them instead of reopening.
   for (const snapshot of listed.sessions) {
     applyPreviewServerSnapshot(
@@ -148,9 +150,10 @@ export async function openMissingBrowserTabs(input: {
     );
   }
   const live = savedBrowserTabsInScope(listed.sessions, threadRef.environmentId, input.scopeKey);
+  const renamedTabIds = new Map<string, string>();
   // Sequential, so tab ids (and with them the strip order) follow the given order.
   for (const tab of browserTabsToRestore(input.tabs, live)) {
-    await openPreviewSession({
+    const opened = await openPreviewSession({
       openPreview: input.openPreview,
       threadRef,
       url: tab.url,
@@ -159,11 +162,15 @@ export async function openMissingBrowserTabs(input: {
       ...(tab.title === undefined ? {} : { title: tab.title }),
       ...(tab.profileId === undefined ? {} : { profileId: tab.profileId }),
       ...(tab.viewport === undefined ? {} : { viewport: tab.viewport }),
+      ...(tab.zoomFactor === undefined ? {} : { zoomFactor: tab.zoomFactor }),
       ...(projectId === undefined ? {} : { projectId }),
       ...(tab.isolated ? { isolated: true } : {}),
     });
+    if (opened._tag === "Success" && tab.tabId !== undefined) {
+      renamedTabIds.set(tab.tabId, opened.value.tabId);
+    }
   }
-  return true;
+  return renamedTabIds;
 }
 
 /**
@@ -287,8 +294,9 @@ export function useRestoreBrowserScope(input: {
         scopeKey,
         tabs: planned,
       })
-        .then((opened) => {
-          if (opened) {
+        .then((renamedTabIds) => {
+          if (renamedTabIds) {
+            useSharedTabOrderStore.getState().renameBrowserTabs(renamedTabIds);
             markScopeRestored(scopeKey);
             return;
           }

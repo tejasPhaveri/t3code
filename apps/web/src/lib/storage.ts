@@ -42,6 +42,40 @@ export function resolveStorage(storage: Partial<StateStorage> | null | undefined
   return isStateStorage(storage) ? storage : createMemoryStorage();
 }
 
+/**
+ * Storage for a store the main window and the panel window share. Zustand saves on every update,
+ * even one that changed nothing, and a window learns of the other's saves a moment late; a stale
+ * window saving its unchanged copy would undo the other window's change. So a save of exactly
+ * what this window last saved or loaded is skipped.
+ */
+export function resolveSharedWindowStorage(
+  storage: Partial<StateStorage> | null | undefined,
+): StateStorage {
+  const base = resolveStorage(storage);
+  const lastSeen = new Map<string, string | null>();
+  const remember = (name: string, value: string | null) => {
+    lastSeen.set(name, value);
+    return value;
+  };
+  return {
+    getItem: (name) => {
+      const value = base.getItem(name);
+      return typeof value === "string" || value === null
+        ? remember(name, value)
+        : value.then((resolved) => remember(name, resolved));
+    },
+    setItem: (name, value) => {
+      if (lastSeen.get(name) === value) return;
+      lastSeen.set(name, value);
+      return base.setItem(name, value);
+    },
+    removeItem: (name) => {
+      lastSeen.delete(name);
+      return base.removeItem(name);
+    },
+  };
+}
+
 export function createDeferredStorage<TValue>(
   baseStorage: Partial<StateStorage> | null | undefined,
   serialize: (value: TValue) => string,

@@ -287,3 +287,12 @@ describe("server browser drag", () => {
     }
   });
 });
+
+describe("server browser net errors", () => {
+  it("keeps digits in Chromium error names", () => {
+    expect(ServerBrowserPage.parseNetError("net::ERR_HTTP2_PROTOCOL_ERROR")).toEqual({
+      description: "ERR_HTTP2_PROTOCOL_ERROR",
+      code: -337,
+    });
+  });
+});

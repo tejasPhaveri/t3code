@@ -1,7 +1,8 @@
 import type { GitGraphAction, GitGraphWorktree, GitGraphWorktreeFile } from "@t3tools/contracts";
-import { ChevronDown, ChevronRight, GitBranch, Minus, Plus, Undo2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, GitBranch, Minus, Plus, Undo2 } from "lucide-react";
 import { useState } from "react";
 
+import { resolveDiffPathForWorkspace } from "~/diffFileActions";
 import { cn } from "~/lib/utils";
 
 import { Button } from "../ui/button";
@@ -38,6 +39,15 @@ const STATUS_CLASS: Record<GitGraphWorktreeFile["status"], string> = {
 };
 
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1) || path;
+
+/**
+ * Diff and file tabs read the chat's own checkout, so only that worktree's files open in them.
+ * Paths are repository-relative.
+ */
+interface FileOpeners {
+  readonly diff: (path: string) => void;
+  readonly file: (path: string) => void;
+}
 
 function RowAction(props: {
   readonly label: string;
@@ -87,14 +97,17 @@ function FileTreeRows(props: {
   readonly nodes: readonly FileTreeNode[];
   readonly depth: number;
   readonly staged: boolean;
+  readonly open: FileOpeners | null;
   readonly isCollapsed: (key: string) => boolean;
   readonly onToggle: (key: string) => void;
   readonly onStage: (paths: readonly string[]) => void;
   readonly onUnstage: (paths: readonly string[]) => void;
   readonly onDiscard: (paths: readonly string[]) => void;
 }) {
+  const { open } = props;
   return props.nodes.map((node) => {
     const isCollapsed = props.isCollapsed(node.key);
+    const { file } = node;
     return (
       <div key={node.key}>
         <div
@@ -117,15 +130,33 @@ function FileTreeRows(props: {
               )}
             </button>
           )}
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate",
-              node.file?.status === "deleted" && "line-through opacity-70",
-            )}
-          >
-            {node.name}
-          </span>
+          {file && open ? (
+            <button
+              type="button"
+              className={cn(
+                "min-w-0 flex-1 truncate text-left",
+                file.status === "deleted" && "line-through opacity-70",
+              )}
+              onClick={() => open.diff(file.path)}
+            >
+              {node.name}
+            </button>
+          ) : (
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate",
+                node.file?.status === "deleted" && "line-through opacity-70",
+              )}
+            >
+              {node.name}
+            </span>
+          )}
           <span className="hidden shrink-0 items-center group-hover:flex">
+            {file && open && file.status !== "deleted" ? (
+              <RowAction label="Open file" onClick={() => open.file(file.path)}>
+                <FileText />
+              </RowAction>
+            ) : null}
             <TreeActions
               staged={props.staged}
               paths={node.filePaths}
@@ -159,6 +190,7 @@ function ChangeGroup(props: {
   readonly title: string;
   readonly files: readonly GitGraphWorktreeFile[];
   readonly staged: boolean;
+  readonly open: FileOpeners | null;
   readonly onStage: (paths: readonly string[]) => void;
   readonly onUnstage: (paths: readonly string[]) => void;
   readonly onDiscard: (paths: readonly string[]) => void;
@@ -202,6 +234,7 @@ function ChangeGroup(props: {
           nodes={buildFileTree(props.files)}
           depth={1}
           staged={props.staged}
+          open={props.open}
           isCollapsed={(key) => openByKey[folderKey(key)] === false}
           onToggle={(key) => setLayoutOpen(folderKey(key), openByKey[folderKey(key)] === false)}
           onStage={props.onStage}
@@ -216,7 +249,10 @@ function ChangeGroup(props: {
 function WorktreeSection(props: {
   readonly worktree: GitGraphWorktree;
   readonly showPath: boolean;
+  readonly cwd: string;
   readonly runAction: RunAction;
+  readonly onOpenDiff: (filePath: string) => void;
+  readonly onOpenFile: (relativePath: string) => void;
 }) {
   const { worktree } = props;
   const [expanded, setExpanded] = useSourceControlOpen(worktree.path, worktree.current);
@@ -224,6 +260,20 @@ function WorktreeSection(props: {
   const [committing, setCommitting] = useState(false);
   const target = worktree.current ? {} : { worktreePath: worktree.path };
   const changeCount = worktree.staged.length + worktree.unstaged.length;
+  const open: FileOpeners | null = worktree.current
+    ? {
+        diff: props.onOpenDiff,
+        file: (path) => {
+          // A project can be rooted below the repository, and file tabs are relative to it.
+          const relativePath = resolveDiffPathForWorkspace({
+            filePath: path,
+            workspaceRoot: props.cwd,
+            repositoryRoot: worktree.path,
+          });
+          if (relativePath) props.onOpenFile(relativePath);
+        },
+      }
+    : null;
 
   const stage = (paths: readonly string[]) =>
     void props.runAction({ _tag: "Stage", paths: [...paths] }, target);
@@ -244,6 +294,14 @@ function WorktreeSection(props: {
       ].join("\n"),
     );
     if (confirmed) void props.runAction({ _tag: "Discard", paths: [...paths] }, target);
+  };
+  const untrackedCount = worktree.unstaged.filter((file) => file.status === "untracked").length;
+  // `git clean` deletes every untracked file, so this is a separate, explicit action.
+  const cleanUntracked = async () => {
+    const confirmed = await confirmGitGraphAction(
+      `Delete ${untrackedCount === 1 ? "the untracked file" : `all ${untrackedCount} untracked files`}?\nThis can't be undone.`,
+    );
+    if (confirmed) void props.runAction({ _tag: "CleanUntracked" }, target);
   };
   // A merge can be concluded with git's prepared message, so it needs no typed one.
   const canCommit =
@@ -337,6 +395,7 @@ function WorktreeSection(props: {
             title="Staged Changes"
             files={worktree.staged}
             staged
+            open={open}
             onStage={stage}
             onUnstage={unstage}
             onDiscard={(paths) => void discard(paths)}
@@ -346,10 +405,18 @@ function WorktreeSection(props: {
             title="Changes"
             files={worktree.unstaged}
             staged={false}
+            open={open}
             onStage={stage}
             onUnstage={unstage}
             onDiscard={(paths) => void discard(paths)}
           />
+          {untrackedCount > 0 ? (
+            <div className="px-2 pt-1">
+              <Button size="xs" variant="ghost-muted" onClick={() => void cleanUntracked()}>
+                Clean {untrackedCount} untracked
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -360,7 +427,10 @@ function WorktreeSection(props: {
 export function GitSourceControl(props: {
   readonly worktrees: readonly GitGraphWorktree[] | null;
   readonly error: string | null;
+  readonly cwd: string;
   readonly runAction: RunAction;
+  readonly onOpenDiff: (filePath: string) => void;
+  readonly onOpenFile: (relativePath: string) => void;
 }) {
   if (props.error && !props.worktrees) {
     return <div className="p-3 text-destructive">{props.error}</div>;
@@ -373,7 +443,10 @@ export function GitSourceControl(props: {
           key={worktree.path}
           worktree={worktree}
           showPath={props.worktrees!.length > 1}
+          cwd={props.cwd}
           runAction={props.runAction}
+          onOpenDiff={props.onOpenDiff}
+          onOpenFile={props.onOpenFile}
         />
       ))}
     </div>

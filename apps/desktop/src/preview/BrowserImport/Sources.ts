@@ -291,14 +291,21 @@ const LocalState = Schema.Struct({
   profile: Schema.optional(
     Schema.Struct({
       info_cache: Schema.optional(
-        Schema.Record(Schema.String, Schema.Struct({ name: Schema.optional(Schema.String) })),
+        Schema.Record(
+          Schema.String,
+          Schema.Struct({
+            name: Schema.optional(Schema.String),
+            // The Google account the profile is signed into; empty when signed out.
+            user_name: Schema.optional(Schema.String),
+          }),
+        ),
       ),
     }),
   ),
 });
 const decodeLocalState = Schema.decodeUnknownEffect(Schema.fromJsonString(LocalState));
 
-const isSafeProfileDirectory = (directory: string): boolean =>
+export const isSafeProfileDirectory = (directory: string): boolean =>
   directory.length > 0 &&
   directory !== "." &&
   directory !== ".." &&
@@ -467,7 +474,14 @@ const listSourceProfilesInDirectory = Effect.fnUntraced(function* (
     // directory.
     Effect.map((entries) => entries.filter(([directory]) => isSafeProfileDirectory(directory))),
     Effect.map((entries) =>
-      entries.map(([directory, info]) => ({ directory, name: info.name?.trim() || directory })),
+      entries.map(([directory, info]) => {
+        const account = info.user_name?.trim();
+        return {
+          directory,
+          name: info.name?.trim() || directory,
+          ...(account ? { account } : {}),
+        };
+      }),
     ),
     Effect.orElseSucceed(() => [] as ReadonlyArray<BrowserImportSourceProfile>),
   );

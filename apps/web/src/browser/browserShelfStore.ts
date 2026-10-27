@@ -2,7 +2,7 @@ import type { PreviewViewportSetting } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "~/lib/storage";
+import { resolveSharedWindowStorage } from "~/lib/storage";
 
 import { browserRestoreScopeKey, type SavedBrowserTab } from "./browserScope";
 
@@ -52,7 +52,7 @@ export const useBrowserShelfStore = create<BrowserShelfState>()(
       name: "t3code:browser-shelf:v1",
       version: 2,
       storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+        resolveSharedWindowStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
       partialize: (state) => ({ scopes: state.scopes }),
       migrate: (persisted, version) => {

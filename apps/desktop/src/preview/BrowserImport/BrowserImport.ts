@@ -1,4 +1,6 @@
 import type {
+  BrowserBookmark,
+  BrowserBookmarkSource,
   BrowserImportInput,
   BrowserImportResult,
   BrowserImportSource,
@@ -20,11 +22,13 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as BrowserSession from "../BrowserSession.ts";
 import { ChromiumCookieReadError, readChromiumCookies } from "./ChromiumCookies.ts";
 import type { CookieReadResult } from "./CookieDatabase.ts";
+import { parseChromiumBookmarkBar } from "./ChromiumBookmarks.ts";
 import { FirefoxCookieReadError, readFirefoxCookies } from "./FirefoxCookies.ts";
 import { readSafariCookies, safariAccessDenied, SafariCookieReadError } from "./SafariCookies.ts";
 import {
   BROWSER_IMPORT_SOURCES,
   resolveCookieDatabase,
+  isSafeProfileDirectory,
   isSourceInstalled,
   isSourceRunning,
   listSourceProfiles,
@@ -65,6 +69,11 @@ export class BrowserImport extends Context.Service<
   BrowserImport,
   {
     readonly listSources: Effect.Effect<ReadonlyArray<BrowserImportSource>>;
+    /** Chromium browsers and their profiles, even while running: bookmarks need no lock. */
+    readonly listBookmarkSources: Effect.Effect<ReadonlyArray<BrowserImportSource>>;
+    readonly readBookmarks: (
+      source: BrowserBookmarkSource,
+    ) => Effect.Effect<ReadonlyArray<BrowserBookmark> | null>;
     readonly importCookies: (input: {
       readonly input: BrowserImportInput;
       readonly scope: string;
@@ -301,7 +310,39 @@ export const make = Effect.gen(function* BrowserImportMake() {
     return yield* writeCookies(session, result);
   });
 
-  return BrowserImport.of({ listSources, importCookies });
+  const listBookmarkSources: Effect.Effect<ReadonlyArray<BrowserImportSource>> = Effect.forEach(
+    BROWSER_IMPORT_SOURCES.filter(
+      (definition) =>
+        definition.engine === "chromium" && definition.platforms.includes(pathContext.platform),
+    ),
+    Effect.fnUntraced(function* (definition) {
+      if (!(yield* isSourceInstalled(definition, pathContext))) return [];
+      const profiles = yield* listSourceProfiles(definition, pathContext);
+      return [{ id: definition.id, name: definition.name, profiles } satisfies BrowserImportSource];
+    }),
+  ).pipe(
+    Effect.map((sources) => sources.flat()),
+    Effect.provide(platformServices),
+  );
+
+  const readBookmarks = Effect.fn("BrowserImport.readBookmarks")(function* (
+    source: BrowserBookmarkSource,
+  ) {
+    const definition = BROWSER_IMPORT_SOURCES.find(
+      (candidate) => candidate.id === source.sourceId && candidate.engine === "chromium",
+    );
+    const root = definition?.userDataDirectory(pathContext);
+    // The directory comes from the renderer; one plain segment keeps the read inside the
+    // browser's own data.
+    if (root === undefined || !isSafeProfileDirectory(source.profileDirectory)) return null;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const text = yield* fileSystem
+      .readFileString(pathContext.path.join(root, source.profileDirectory, "Bookmarks"))
+      .pipe(Effect.orElseSucceed(() => null));
+    return text === null ? null : parseChromiumBookmarkBar(text);
+  }, Effect.provide(platformServices));
+
+  return BrowserImport.of({ listSources, importCookies, listBookmarkSources, readBookmarks });
 });
 
 export const layer = Layer.effect(BrowserImport, make);

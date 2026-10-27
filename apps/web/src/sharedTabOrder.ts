@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "~/lib/storage";
+import { resolveSharedWindowStorage } from "~/lib/storage";
 
 import type { RightPanelSurface } from "./rightPanelStore";
 
@@ -101,6 +101,46 @@ export function placementKey(threadId: string, surface: RightPanelSurface): stri
   return sharedSurfaceKey(threadId, surface) ?? surface.id;
 }
 
+type BrowserTabKeys = Pick<
+  SharedTabOrderStoreState,
+  "byProjectKey" | "activeByProjectKey" | "mainWindowByProjectKey" | "shownByWindowKey"
+>;
+
+/**
+ * The keys once saved browser tabs reopened under new ids, or `state` itself when none of the old
+ * ids appear. Ids come from a per-server counter, so without this a restart loses each browser
+ * tab's place in the order, selection and window. A new id the order already picked up while the
+ * tabs reopened gives way to the old id's place.
+ */
+export function renameBrowserTabKeys(
+  state: BrowserTabKeys,
+  renamedTabIds: ReadonlyMap<string, string>,
+): BrowserTabKeys {
+  const renamed = new Map<string, string>(
+    [...renamedTabIds].map(([from, to]) => [`browser:${from}`, `browser:${to}`]),
+  );
+  let changed = false;
+  const rename = (key: string) => {
+    const next = renamed.get(key);
+    if (next === undefined) return key;
+    changed = true;
+    return next;
+  };
+  const renameLists = (byKey: Readonly<Record<string, readonly string[]>>) =>
+    Object.fromEntries(
+      Object.entries(byKey).map(([key, keys]) => [key, [...new Set(keys.map(rename))]]),
+    );
+  const renameValues = (byKey: Readonly<Record<string, string>>) =>
+    Object.fromEntries(Object.entries(byKey).map(([key, value]) => [key, rename(value)]));
+  const next = {
+    byProjectKey: renameLists(state.byProjectKey),
+    activeByProjectKey: renameValues(state.activeByProjectKey),
+    mainWindowByProjectKey: renameLists(state.mainWindowByProjectKey),
+    shownByWindowKey: renameValues(state.shownByWindowKey),
+  };
+  return changed ? next : state;
+}
+
 /**
  * The tabs one window shows of a chat whose panel is split across two windows, and the one it
  * has selected: the chat's selection when that tab is here, else the tab this window showed
@@ -146,7 +186,15 @@ interface SharedTabOrderStoreState {
   readonly shownByWindowKey: Readonly<Record<string, string>>;
   readonly place: (projectKey: string, key: string, role: PanelWindowRole) => void;
   readonly setShown: (role: PanelWindowRole, projectKey: string, key: string) => void;
+  /** Old browser tab id to new, for tabs reopened after a restart. */
+  readonly renameBrowserTabs: (renamedTabIds: ReadonlyMap<string, string>) => void;
 }
+
+/**
+ * Browser tabs this window renamed after reopening them. The other window can save its copy from
+ * before the rename over it a moment later; whenever old ids come back, they are renamed again.
+ */
+const renamedThisRun = new Map<string, string>();
 
 /** Tab order shared by every chat in a project, so dragging a tab in one moves it in all. */
 export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
@@ -201,12 +249,16 @@ export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
             ? state
             : { shownByWindowKey: { ...state.shownByWindowKey, [windowKey]: key } };
         }),
+      renameBrowserTabs: (renamedTabIds) => {
+        for (const [from, to] of renamedTabIds) renamedThisRun.set(from, to);
+        set((state) => renameBrowserTabKeys(state, renamedThisRun));
+      },
     }),
     {
       name: "t3code:shared-tab-order:v1",
       version: 1,
       storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+        resolveSharedWindowStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
       partialize: (state) => ({
         byProjectKey: state.byProjectKey,
@@ -217,3 +269,9 @@ export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
     },
   ),
 );
+
+useSharedTabOrderStore.subscribe((state) => {
+  if (renamedThisRun.size === 0) return;
+  const next = renameBrowserTabKeys(state, renamedThisRun);
+  if (next !== state) useSharedTabOrderStore.setState(next);
+});

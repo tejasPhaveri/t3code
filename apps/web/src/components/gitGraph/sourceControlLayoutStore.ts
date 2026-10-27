@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "~/lib/storage";
+import { resolveSharedWindowStorage } from "~/lib/storage";
 
 /** Old entries fall off the start, so deleted worktrees and folders cannot grow it forever. */
 const MAX_ENTRIES = 500;
@@ -34,7 +34,7 @@ export const useSourceControlLayoutStore = create<SourceControlLayoutStoreState>
       name: "t3code:git-source-control-layout:v1",
       version: 1,
       storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+        resolveSharedWindowStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
       partialize: (state) => ({ openByKey: state.openByKey }),
     },

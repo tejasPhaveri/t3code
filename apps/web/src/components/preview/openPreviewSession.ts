@@ -5,6 +5,7 @@ import type {
   PreviewRuntime,
   PreviewSessionSnapshot,
   PreviewViewportSetting,
+  PreviewZoomFactor,
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
@@ -36,6 +37,7 @@ interface OpenPreviewSessionInput<E> {
   runtime?: PreviewRuntime;
   title?: string;
   lazy?: boolean;
+  zoomFactor?: PreviewZoomFactor;
 }
 
 export async function openPreviewSession<E>(
@@ -57,6 +59,7 @@ export async function openPreviewSession<E>(
       ...(input.url === undefined ? {} : { url: input.url }),
       ...(input.title === undefined ? {} : { title: input.title }),
       ...(input.lazy ? { lazy: true } : {}),
+      ...(input.zoomFactor === undefined ? {} : { zoomFactor: input.zoomFactor }),
       viewport: input.viewport ?? browserDefaultOpenViewport(defaults),
       profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
       ...previewOpenScope({

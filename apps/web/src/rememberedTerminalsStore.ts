@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "~/lib/storage";
+import { resolveSharedWindowStorage } from "~/lib/storage";
 
 export interface RememberedTerminal {
   readonly threadId: string;
@@ -67,7 +67,7 @@ export const useRememberedTerminalsStore = create<RememberedTerminalsStoreState>
       name: "t3code:remembered-terminals:v1",
       version: 1,
       storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+        resolveSharedWindowStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
       partialize: (state) => ({ byEnvironmentId: state.byEnvironmentId }),
     },

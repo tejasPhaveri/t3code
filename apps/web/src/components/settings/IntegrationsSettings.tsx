@@ -69,6 +69,7 @@ import {
   DeviceHostDiagnostics,
 } from "~/components/device/DeviceSetup";
 import { isElectron } from "../../env";
+import { bookmarkSourceKey, useBrowserBookmarkSources } from "../../browser/browserBookmarks";
 
 import { Badge } from "../ui/badge";
 import {
@@ -77,7 +78,12 @@ import {
   MenuGroupLabel,
   MenuItem,
   MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
   MenuTrigger,
 } from "../ui/menu";
 import { readLocalApi } from "~/localApi";
@@ -1197,6 +1203,56 @@ function BrowserPersistenceSetting({ disabled }: { readonly disabled: boolean })
   );
 }
 
+/** Which browser profile's bookmarks bar this profile's tabs show, from those on this computer. */
+function ProfileBookmarksSubmenu({
+  profileId,
+  sources,
+}: {
+  readonly profileId: string;
+  readonly sources: readonly BrowserImportSource[] | null;
+}) {
+  const current = useClientSettings((settings) => settings.browserBookmarkSources[profileId]);
+  const updateSettings = useUpdatePrimarySettings();
+  const options = (sources ?? []).flatMap((source) =>
+    source.profiles.map((profile) => {
+      const choice = { sourceId: source.id, profileDirectory: profile.directory };
+      const label = `${source.name} · ${profile.name}`;
+      return {
+        key: bookmarkSourceKey(choice),
+        label: profile.account ? `${label} (${profile.account})` : label,
+        choice,
+      };
+    }),
+  );
+  const choose = (key: string) => {
+    const { [profileId]: _previous, ...others } = getClientSettings().browserBookmarkSources;
+    const option = options.find((candidate) => candidate.key === key);
+    updateSettings({
+      browserBookmarkSources: option ? { ...others, [profileId]: option.choice } : others,
+    });
+  };
+  return (
+    <MenuSub>
+      <MenuSubTrigger>Bookmarks bar</MenuSubTrigger>
+      <MenuSubPopup className="max-w-80">
+        <MenuRadioGroup value={current ? bookmarkSourceKey(current) : "off"} onValueChange={choose}>
+          <MenuRadioItem value="off" closeOnClick>
+            Off
+          </MenuRadioItem>
+          {options.map((option) => (
+            <MenuRadioItem key={option.key} value={option.key} closeOnClick>
+              <span className="truncate">{option.label}</span>
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+        {sources !== null && options.length === 0 ? (
+          <MenuItem disabled>No Chrome-based browser found</MenuItem>
+        ) : null}
+      </MenuSubPopup>
+    </MenuSub>
+  );
+}
+
 function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   const userProfiles = useClientSettings((settings) => settings.browserProfiles);
   const defaultProfileId = useClientSettings((settings) => settings.browserDefaultProfileId);
@@ -1205,6 +1261,8 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
   const { environments, isReady: environmentsReady } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const [sources, setSources] = useState<ReadonlyArray<BrowserImportSource> | null>(null);
+  const bookmarksAvailable = isElectron && Boolean(previewBridge?.readBrowserBookmarks);
+  const bookmarkSources = useBrowserBookmarkSources(bookmarksAvailable);
   const [importSession, setImportSession] = useState<{
     readonly source: BrowserImportSource;
     readonly environmentId: EnvironmentId;
@@ -1545,6 +1603,9 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
                   >
                     Set as default
                   </MenuItem>
+                  {bookmarksAvailable ? (
+                    <ProfileBookmarksSubmenu profileId={profile.id} sources={bookmarkSources} />
+                  ) : null}
                   <MenuItem
                     disabled={!settingsHydrated || !removalAvailable}
                     onClick={() => {

@@ -364,6 +364,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     listBrowserImportSources: () => ipcRenderer.invoke(IpcChannels.PREVIEW_IMPORT_SOURCES_CHANNEL),
     importBrowserCookies: (input) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_IMPORT_COOKIES_CHANNEL, input),
+    listBrowserBookmarkSources: () =>
+      ipcRenderer.invoke(IpcChannels.PREVIEW_BOOKMARK_SOURCES_CHANNEL),
+    readBrowserBookmarks: (source) =>
+      ipcRenderer.invoke(IpcChannels.PREVIEW_READ_BOOKMARKS_CHANNEL, source),
     clearCookies: (environmentId, profileId) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_CLEAR_COOKIES_CHANNEL, { environmentId, profileId }),
     clearCache: (environmentId, profileId) =>

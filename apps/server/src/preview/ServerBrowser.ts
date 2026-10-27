@@ -1501,7 +1501,7 @@ const make = Effect.gen(function* () {
           `${url} is a file this browser cannot show, so it was downloaded instead. preview_status lists it under downloads.`,
         );
       }
-      if (/ERR_[A-Z_]+/.test(message)) {
+      if (ServerBrowserPage.NET_ERROR_NAME.test(message)) {
         throw new ServerBrowserPage.ServerBrowserOperationError(
           "PreviewAutomationExecutionError",
           `Navigation to ${url} failed: ${ServerBrowserPage.parseNetError(message).description}`,

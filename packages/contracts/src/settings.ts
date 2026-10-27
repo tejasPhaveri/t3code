@@ -32,6 +32,7 @@ import { ModelSelection } from "./modelSelection.ts";
 import { ProjectScript, type ProjectMutation } from "./project.ts";
 import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
+import { BrowserBookmarkSource } from "./browserImport.ts";
 import {
   BrowserPersistence,
   BrowserProjectSetup,
@@ -387,6 +388,11 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
 
   browserProjectSetups: Schema.Record(Schema.String, BrowserProjectSetup).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+
+  /** By T3 browser profile id: whose bookmarks bar its tabs show. Absent shows none. */
+  browserBookmarkSources: Schema.Record(Schema.String, BrowserBookmarkSource).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
 
@@ -1713,6 +1719,7 @@ export const ClientSettingsPatch = Schema.Struct({
   browserDefaultProfileId: Schema.optionalKey(BrowserProfileId),
   browserPersistence: Schema.optionalKey(BrowserPersistence),
   browserProjectSetups: Schema.optionalKey(Schema.Record(Schema.String, BrowserProjectSetup)),
+  browserBookmarkSources: Schema.optionalKey(Schema.Record(Schema.String, BrowserBookmarkSource)),
   confirmQuit: Schema.optionalKey(QuitConfirmationMode),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),

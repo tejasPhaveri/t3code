@@ -258,15 +258,19 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   const moveRightPanelSurface = (surfaceId: string, toIndex: number) => {
     if (!activeThreadRef) return;
     const store = useRightPanelStore.getState();
+    const surfaces = store.byThreadKey[scopedThreadKey(activeThreadRef)]?.surfaces ?? [];
+    const fromIndex = surfaces.findIndex((surface) => surface.id === surfaceId);
+    if (fromIndex < 0) return;
+    const moved = [...surfaces];
+    moved.splice(toIndex, 0, ...moved.splice(fromIndex, 1));
+    // The order is saved first: the panel's other window applies it to the moved tabs when they
+    // arrive, instead of sorting them back by the order it had.
+    if (input.sharedTabOrderProjectKey !== null) {
+      useSharedTabOrderStore
+        .getState()
+        .record(input.sharedTabOrderProjectKey, activeThreadRef.threadId, moved);
+    }
     store.moveSurface(activeThreadRef, surfaceId, toIndex);
-    if (input.sharedTabOrderProjectKey === null) return;
-    useSharedTabOrderStore
-      .getState()
-      .record(
-        input.sharedTabOrderProjectKey,
-        activeThreadRef.threadId,
-        useRightPanelStore.getState().byThreadKey[scopedThreadKey(activeThreadRef)]?.surfaces ?? [],
-      );
   };
   const moveRightPanelSurfaceStable = useStableCallback(moveRightPanelSurface);
   const copyRightPanelFilePath = (relativePath: string) => {
@@ -321,6 +325,16 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     onDiffPanelOpen?.();
   };
   const onOpenTurnDiffStable = useStableCallback(onOpenTurnDiff);
+  const onOpenUncommittedDiff = (filePath: string) => {
+    if (!isServerThread || !activeThreadRef) return;
+    const diffOpen =
+      selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, activeThreadRef) === "diff";
+    explicitDiffOpenRef.current = diffOpen ? null : activeThreadRef;
+    useDiffPanelStore.getState().revealUncommittedFile(activeThreadRef, filePath);
+    useRightPanelStore.getState().open(activeThreadRef, "diff");
+    onDiffPanelOpen?.();
+  };
+  const onOpenUncommittedDiffStable = useStableCallback(onOpenUncommittedDiff);
   useEffect(
     () =>
       subscribePreviewAction((action) => {
@@ -357,6 +371,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     createIsolatedBrowserSurfaceStable,
     moveRightPanelSurfaceStable,
     onOpenTurnDiffStable,
+    onOpenUncommittedDiffStable,
     onToggleDiffStable,
     openChangesFromThreadPanelStable,
     openFileSurfaceStable,

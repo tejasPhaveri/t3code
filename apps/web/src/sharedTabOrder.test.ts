@@ -6,7 +6,9 @@ import {
   followSharedActiveTab,
   includeSharedTabs,
   recordSharedTabOrder,
+  renameBrowserTabKeys,
   sharedSurfaceKey,
+  useSharedTabOrderStore,
   windowPanelView,
 } from "./sharedTabOrder";
 
@@ -116,5 +118,46 @@ describe("shared tab order", () => {
       surfaces: [],
       activeSurfaceId: null,
     });
+  });
+
+  it("keeps a reopened browser tab's place, selection and window after a restart", () => {
+    // Last run's tab_7 reopened as tab_1, which the order already picked up at the end.
+    const projectKey = "env:project";
+    const renamed = renameBrowserTabKeys(
+      {
+        byProjectKey: { [projectKey]: ["browser:tab_7", "git-graph", "browser:tab_1"] },
+        activeByProjectKey: { [projectKey]: "browser:tab_7" },
+        mainWindowByProjectKey: { [projectKey]: ["browser:tab_7"] },
+        shownByWindowKey: { [`main:${projectKey}`]: "browser:tab_7" },
+      },
+      new Map([["tab_7", "tab_1"]]),
+    );
+
+    expect(renamed.byProjectKey[projectKey]).toEqual(["browser:tab_1", "git-graph"]);
+    expect(renamed.activeByProjectKey[projectKey]).toBe("browser:tab_1");
+    expect(renamed.shownByWindowKey[`main:${projectKey}`]).toBe("browser:tab_1");
+    const tabs = [gitGraph, browser("tab_1")];
+    const main = windowPanelView(
+      "A",
+      tabs,
+      null,
+      "main",
+      renamed.mainWindowByProjectKey[projectKey]!,
+      undefined,
+    );
+    expect(ids(main.surfaces)).toEqual(["browser:tab_1"]);
+  });
+
+  it("renames a reopened tab again when the other window saves its older copy over it", () => {
+    useSharedTabOrderStore.getState().renameBrowserTabs(new Map([["tab_3_old", "tab_1_new"]]));
+    // The panel window's save from before the rename arrives and reloads this store.
+    useSharedTabOrderStore.setState({
+      mainWindowByProjectKey: { "env:project": ["git-graph", "browser:tab_3_old"] },
+    });
+
+    expect(useSharedTabOrderStore.getState().mainWindowByProjectKey["env:project"]).toEqual([
+      "git-graph",
+      "browser:tab_1_new",
+    ]);
   });
 });

@@ -142,6 +142,42 @@ For a local Git repository without a remote, **Publish Repository** creates a ho
 adds it as `origin`, and pushes your commits. If there are no commits yet, it creates the remote;
 make your first commit before pushing.
 
+## Git Graph
+
+Open **Git Graph** from the panel's surface picker to see the repository's history as a graph:
+every branch, remote branch, tag and stash, with the uncommitted changes at the top. The left
+column shows each worktree's staged and unstaged files, where you can stage, unstage, discard and
+commit.
+
+Click a commit to open its details: message, author, dates, signature, parents, and the files it
+touched with their line counts. Click a file to read its diff there, or **Complete patch** for the
+whole commit. **Copy commit hash** and **Copy message** are in the details header and the row's
+context menu.
+
+Right-click anything for its actions. A commit offers checkout, merge, branch, tag, cherry-pick,
+revert, drop, and reset (keeping changes staged, keeping them unstaged, or discarding them). A
+branch offers checkout, merge, rebase, push, force push, rename and delete. A stash offers apply,
+pop, drop, and creating a branch from it. A tag offers its details, pushing it to origin, and
+deleting it.
+
+To compare two commits, click one and Ctrl/Cmd-click another; the comparison opens beside the
+graph with its own per-file diffs. **Compare with parent** in the details view compares a commit
+with its first parent.
+
+The toolbar filters the graph. **Branches** shows everything, only the branches you pick, or the
+branches matching a glob such as `feature/*`. **Order** picks commit, author or topological
+ordering, and can follow only first parents. **Find** (⌘/Ctrl + F) matches text anywhere in a row —
+message, author, date, hash, branch or tag — and Enter walks the matches. **Remotes** edits the
+repository's remotes. The graph refreshes in the background while it is open.
+
+Keyboard shortcuts, which match the VS Code extension's: ⌘/Ctrl + F finds, ⌘/Ctrl + H scrolls to
+the checked-out commit, ⌘/Ctrl + R refreshes, and ⌘/Ctrl + S / ⌘/Ctrl + Shift + S jump to the next
+or previous stash.
+
+Commits and their diffs are read through the environment's Git, so they work the same in a remote
+environment. The Diff and Files tabs still open the chat's own checkout; a file from another
+worktree opens in the repository's editor instead.
+
 ## Create a pull request
 
 Use a thread's Git actions to commit, push, and create a pull request. T3 Code can generate commit

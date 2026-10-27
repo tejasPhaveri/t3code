@@ -127,8 +127,8 @@ describe("savedBrowserTabsByScope", () => {
         })
       ],
     ).toEqual([
-      { url: "https://staging.example.com/", profileId: "owner" },
-      { url: "https://dev.example.com/", profileId: "owner" },
+      { url: "https://staging.example.com/", profileId: "owner", tabId: "tab_2" },
+      { url: "https://dev.example.com/", profileId: "owner", tabId: "tab_b" },
     ]);
   });
 
@@ -163,7 +163,7 @@ describe("savedBrowserTabsByScope", () => {
 
     expect(scopes).toEqual({
       [browserRestoreScopeKey({ environmentId: "env", threadId: "thread-a", isolated: true })]: [
-        { url: "https://dev.example.com/", profileId: "owner", isolated: true },
+        { url: "https://dev.example.com/", profileId: "owner", isolated: true, tabId: "tab_2" },
       ],
     });
   });

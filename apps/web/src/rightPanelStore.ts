@@ -8,7 +8,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { useClosedViewStore } from "./closedViewStore";
-import { resolveStorage } from "./lib/storage";
+import { resolveSharedWindowStorage } from "./lib/storage";
 import type { ThreadPanelPresentation } from "./rightPanelLayout";
 import { applySharedTabOrder } from "./sharedTabOrder";
 import type { ChatFileAttachment } from "./types";
@@ -1215,7 +1215,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       name: RIGHT_PANEL_STORAGE_KEY,
       version: RIGHT_PANEL_STORAGE_VERSION,
       storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
+        resolveSharedWindowStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
       partialize: (state) => ({
         byThreadKey: Object.fromEntries(

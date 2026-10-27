@@ -33,6 +33,10 @@ export type GitGraphRowItem =
 export interface GitGraphRowsModel {
   readonly items: readonly GitGraphRowItem[];
   readonly layout: GitGraphLayout;
+  /** A commit's row index, for jumping to a child or parent. */
+  readonly rowByHash: ReadonlyMap<string, number>;
+  /** The row a commit's parent is drawn at, if that parent is loaded. */
+  readonly parentRows: ReadonlyMap<string, number>;
 }
 
 function branchLabels(
@@ -111,10 +115,40 @@ export function buildGitGraphRows(log: GitGraphLogResult): GitGraphRowsModel {
     parentsByKey.set(commit.hash, commit.parents);
   }
 
+  const rowByHash = new Map<string, number>();
+  for (const [index, item] of items.entries()) {
+    if (item.kind === "commit") rowByHash.set(item.commit.hash, index);
+  }
+  const parentRows = new Map<string, number>();
+  for (const item of items) {
+    if (item.kind !== "commit") continue;
+    const parent = item.commit.parents[0];
+    const row = parent === undefined ? undefined : rowByHash.get(parent);
+    if (row !== undefined) parentRows.set(item.commit.hash, row);
+  }
+
   return {
     items,
     layout: layoutGitGraph(
       items.map((item) => ({ hash: item.key, parents: parentsByKey.get(item.key) ?? [] })),
     ),
+    rowByHash,
+    parentRows,
   };
+}
+
+/**
+ * The commit whose first parent chain contains `hash`, so a reader can walk towards the root.
+ * Only loaded commits are known; a parent past the page is what `hasMore` is for.
+ */
+export function findChildRow(model: GitGraphRowsModel, row: number): number | null {
+  const item = model.items[row];
+  if (item === undefined || item.kind !== "commit") return null;
+  // The child is the nearest commit above whose first parent is this one.
+  for (let index = row - 1; index >= 0; index -= 1) {
+    const candidate = model.items[index];
+    if (candidate === undefined || candidate.kind !== "commit") continue;
+    if (candidate.commit.parents[0] === item.commit.hash) return index;
+  }
+  return null;
 }

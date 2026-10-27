@@ -63,6 +63,7 @@ import {
   type MessageId,
   type ModelSelection,
   type PreviewAnnotationPayload,
+  type PreviewZoomFactor,
   ProviderInstanceId,
   type ServerProvider,
   type ScopedThreadRef,
@@ -170,9 +171,11 @@ import {
 } from "../rightPanelStore";
 import {
   isPreviewSupportedInRuntime,
+  updatePreviewServerSnapshot,
   useActivePreviewSessions,
   useThreadPreviewState,
 } from "../previewStateStore";
+import { previewBridge } from "./preview/previewBridge";
 import {
   browserRestoreScopeKey,
   locatePreviewSession,
@@ -2076,6 +2079,37 @@ export default function ChatView(props: ChatViewProps) {
     });
   };
   const duplicateBrowserSurfaceStable = useStableCallback(duplicateBrowserSurface);
+  const adjustPreviewTab = useAtomCommand(previewEnvironment.adjust, "browser tab zoom");
+  // A zoom picked for one tab keeps it there; null hands it back to the default zoom.
+  const setBrowserTabZoom = (surface: RightPanelSurface, zoomFactor: PreviewZoomFactor | null) => {
+    if (!activeThreadRef || surface.kind !== "preview" || surface.resourceId === null) return;
+    const tabId = surface.resourceId;
+    const snapshot = panelPreviewSessions[tabId];
+    if (!snapshot) return;
+    if (snapshot.runtime !== "server") {
+      const runtimeTabId = resolvePreviewRuntimeTabId?.(tabId);
+      if (runtimeTabId) {
+        void previewBridge
+          ?.setZoomFactor(runtimeTabId, zoomFactor ?? browserDefaults.zoomFactor)
+          .catch(() => undefined);
+      }
+      return;
+    }
+    const owner =
+      locatePreviewSession(previewByThreadKey, activeThreadRef.environmentId, tabId)?.owner ??
+      activeThreadRef;
+    void adjustPreviewTab({
+      environmentId: owner.environmentId,
+      input: {
+        threadId: owner.threadId,
+        tabId,
+        ...(zoomFactor === null ? { followDefaultZoom: true } : { zoomFactor }),
+      },
+    }).then((result) => {
+      if (result._tag === "Success") updatePreviewServerSnapshot(owner, result.value);
+    });
+  };
+  const setBrowserTabZoomStable = useStableCallback(setBrowserTabZoom);
   const openConfiguredProjectTabsStable = useStableCallback(() =>
     openProjectTabs(browserProjectSetup?.tabs ?? []),
   );
@@ -2307,10 +2341,12 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadRef?.environmentId ?? null,
     AuthPreviewOperateScope,
   );
+  // Only the main window restores: the panel window starts with it, and both reading the scope
+  // before either reopened anything would reopen every saved tab twice.
   useRestoreBrowserScope({
     threadRef: activeThreadRef ?? null,
     projectId: activeThread?.projectId,
-    enabled: isElectron && canOperatePreview,
+    enabled: isElectron && !isPanelWindow && canOperatePreview,
   });
   const supportsThreadPullRequests =
     serverConfig?.environment.capabilities.threadPullRequests === true;
@@ -2825,6 +2861,7 @@ export default function ChatView(props: ChatViewProps) {
     createIsolatedBrowserSurfaceStable,
     moveRightPanelSurfaceStable,
     onOpenTurnDiffStable,
+    onOpenUncommittedDiffStable,
     openChangesFromThreadPanelStable,
     openFileSurfaceStable,
     toggleRightPanelMaximizedStable,
@@ -3531,7 +3568,12 @@ export default function ChatView(props: ChatViewProps) {
       getShortcutContext={getShortcutContextStable}
       onSendAnnotation={sendPreviewAnnotationStable}
       onCloseSurface={closeRightPanelSurface}
-      gitGraph={{ cwd: activeWorkspaceRoot ?? null, projectId: activeThread?.projectId ?? null }}
+      gitGraph={{
+        cwd: activeWorkspaceRoot ?? null,
+        projectId: activeThread?.projectId ?? null,
+        onOpenDiff: onOpenUncommittedDiffStable,
+        onOpenFile: openFileSurfaceStable,
+      }}
       terminal={{
         launchContext: activeTerminalLaunchContext ?? null,
         focusRequestId: terminalFocusRequestId,
@@ -4396,6 +4438,8 @@ export default function ChatView(props: ChatViewProps) {
           gitGraphAvailable={isGitRepo && activeWorkspaceRoot !== undefined}
           onAddIsolatedBrowser={createIsolatedBrowserSurfaceStable}
           onDuplicateBrowser={duplicateBrowserSurfaceStable}
+          onSetBrowserZoom={setBrowserTabZoomStable}
+          defaultBrowserZoom={browserDefaults.zoomFactor}
           onAddTerminal={addTerminalSurfaceStable}
           onAddDiff={addDiffSurfaceStable}
           onAddFiles={addFilesSurfaceStable}
