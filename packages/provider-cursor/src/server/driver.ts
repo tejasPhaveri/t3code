@@ -5,12 +5,14 @@ import {
 } from "@t3tools/contracts";
 import { CursorSettings } from "../settings.ts";
 import * as Effect from "effect/Effect";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import { readCursorUsageLimits } from "./usageLimits.ts";
+import { listCursorCloudAgents } from "./cloudAgents.ts";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { makeCursorTextGeneration } from "./textGeneration.ts";
@@ -313,6 +315,21 @@ export const CursorDriver: ProviderDriver<
             ]).pipe(Effect.map(([machineSnapshot, skills]) => ({ ...machineSnapshot, skills }))),
       orchestrationAdapter,
       textGeneration,
+      listCloudAgents: Effect.fn("listCloudAgents")(function* () {
+        const apiKey = yield* auth.readApiKey.pipe(Effect.orElseSucceed(() => undefined));
+        const nowMs = yield* Clock.currentTimeMillis;
+        return yield* listCursorCloudAgents(apiKey, nowMs).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderDriverError({
+                driver: DRIVER_KIND,
+                instanceId,
+                detail: "Failed to list Cursor cloud agents.",
+                cause,
+              }),
+          ),
+        );
+      }),
     } satisfies ProviderInstance;
   }),
 };

@@ -52,6 +52,14 @@ export interface ProviderInstance {
   readonly orchestrationAdapter: ProviderAdapter.ProviderAdapterV2["Service"];
   readonly textGeneration: ProviderTextGeneration;
   readonly auth?: ProviderAuthController;
+  /**
+   * Cloud agents this provider runs outside T3. Absent when the provider has no
+   * cloud surface, so callers can treat presence as the capability check.
+   */
+  readonly listCloudAgents?: () => Effect.Effect<
+    ReadonlyArray<ProviderCloudAgent>,
+    ProviderDriverError
+  >;
   readonly acpSessionManagement?: {
     readonly listSessions: (input: {
       readonly cwd: string;
@@ -75,6 +83,16 @@ export interface ProviderInstance {
       readonly providerId: string;
     }) => Effect.Effect<void, AcpRegistryOperationError>;
   };
+}
+
+/** A cloud agent as the provider describes it: no T3 thread, run, or checkout. */
+export interface ProviderCloudAgent {
+  readonly id: string;
+  readonly name: string;
+  readonly summary: string | null;
+  readonly phase: "running" | "finished" | "error" | "unknown";
+  readonly lastActivityAtMs: number;
+  readonly webUrl: string | null;
 }
 
 export interface ProviderContinuationIdentity {
