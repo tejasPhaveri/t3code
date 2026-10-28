@@ -10,7 +10,12 @@ import {
   type JSONContent,
   type TiptapEditorHTMLElement,
 } from "@tiptap/core";
-import { ReactNodeViewRenderer, NodeViewWrapper, type NodeViewProps } from "@tiptap/react";
+import {
+  ReactNodeViewRenderer,
+  NodeViewWrapper,
+  type NodeViewProps,
+  type NodeViewRendererProps,
+} from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { newlineInCode, splitBlockKeepMarks } from "@tiptap/pm/commands";
@@ -119,6 +124,12 @@ import {
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ComposerCodeBlockNodeView } from "./chat/ComposerCodeBlockNodeView";
+import { ComposerPastedContentNodeView } from "./chat/ComposerPastedContentNodeView";
+import {
+  PASTED_CONTENT_FENCE_LANGUAGE,
+  collapsePastedTextAsBlock,
+} from "./chat/composerPastedText";
+import { languageOfInfoString } from "~/composer-code-languages";
 import { resolveAssistantCitationCommentDismissal } from "./chat/assistantCitationCommentDismissal";
 import { composerCodeBlockHighlight } from "./composerCodeBlockHighlight";
 import { importPastedComposerText } from "./composerInlineTokenPaste";
@@ -160,6 +171,8 @@ export interface ComposerPromptEditorProps {
   suggestionListId?: string | undefined;
   activeSuggestionId?: string | undefined;
   isPathQueryActive?: () => boolean;
+  /** True while the paste-as-text shortcut is armed, so a paste stays editable and unfolded. */
+  isPasteAsTextArmed?: (() => boolean) | undefined;
   containerClassName?: string;
   className?: string;
   placeholderClassName?: string;
@@ -811,6 +824,19 @@ const ComposerUndoGroupingExtension = Extension.create<
   },
 });
 
+// Built once: a renderer created per node view would drop the cached node view class.
+const renderComposerCodeBlockNodeView = ReactNodeViewRenderer(ComposerCodeBlockNodeView, {
+  // Tiptap shields only the button; header clicks would move ProseMirror's selection.
+  stopEvent: ({ event }) =>
+    event.target instanceof Element &&
+    event.target.closest(".chat-markdown-codeblock-header") !== null,
+});
+const renderPastedContentNodeView = ReactNodeViewRenderer(ComposerPastedContentNodeView, {
+  stopEvent: ({ event }) =>
+    event.target instanceof Element &&
+    event.target.closest(".chat-markdown-codeblock-header") !== null,
+});
+
 // Module scope keeps extension identity stable; Tiptap hooks read config through this.
 function createComposerExtensions(richText: boolean) {
   return [
@@ -847,12 +873,12 @@ function createComposerExtensions(richText: boolean) {
           ComposerCodeExtension,
           ComposerCodeBlockExtension.extend({
             addNodeView() {
-              return ReactNodeViewRenderer(ComposerCodeBlockNodeView, {
-                // Tiptap shields only the button; header clicks would move ProseMirror's selection.
-                stopEvent: ({ event }) =>
-                  event.target instanceof Element &&
-                  event.target.closest(".chat-markdown-codeblock-header") !== null,
-              });
+              // A pasted block opens folded; every other fence keeps the language picker.
+              return (props: NodeViewRendererProps) =>
+                languageOfInfoString(String(props.node.attrs.language ?? "")) ===
+                PASTED_CONTENT_FENCE_LANGUAGE
+                  ? renderPastedContentNodeView(props)
+                  : renderComposerCodeBlockNodeView(props);
             },
             // Tiptap's fence rule allows unserializable lists/quotes; use top-level Enter instead.
             addInputRules() {
@@ -938,6 +964,7 @@ function ComposerPromptEditorTiptapInner(
     suggestionListId,
     activeSuggestionId,
     isPathQueryActive,
+    isPasteAsTextArmed,
     containerClassName,
     className,
     placeholderClassName,
@@ -971,6 +998,7 @@ function ComposerPromptEditorTiptapInner(
     onVisibleSelectionChange,
     onCommandKeyDown,
     isPathQueryActive,
+    isPasteAsTextArmed,
     importContextFragment,
   }));
 
@@ -1368,6 +1396,32 @@ function ComposerPromptEditorTiptapInner(
             !literalText && importFragment
               ? importPastedComposerText(clipboardData, importFragment)
               : pastedText;
+          // A long dump folds into a block the composer opens collapsed. The text
+          // itself is unchanged, so the agent still receives all of it.
+          const keepEditable = literalText || readCallbacks().isPasteAsTextArmed?.() === true;
+          const collapsed = keepEditable ? null : collapsePastedTextAsBlock(text);
+          if (collapsed !== null) {
+            const map = serializeEditorDoc(view.state.doc);
+            const before = flatToMarkdown(map, pmToFlat(map, view.state.selection.from));
+            const pasted =
+              before > 0 && !/\s/.test(map.value[before - 1]!) ? ` ${collapsed}` : collapsed;
+            const editorInstance = (view.dom as TiptapEditorHTMLElement).editor;
+            editorInstance
+              ?.chain()
+              .command(({ tr }) => {
+                markAsClipboardEdit(tr, "paste");
+                return true;
+              })
+              .insertContent(
+                buildTiptapContent(pasted, skillLabelFor, {
+                  styling: richText,
+                  blocks: true,
+                }),
+              )
+              .run();
+            if (editorInstance) scrollTiptapCaretIntoView(editorInstance);
+            return true;
+          }
           const tokens = literalText ? [] : collectComposerPromptInlineTokens(`${text}\n`);
           const isChip = (token: (typeof tokens)[number] | undefined) =>
             token?.type === "mention" ||

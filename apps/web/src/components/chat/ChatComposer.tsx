@@ -46,6 +46,7 @@ import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime
 import * as Schema from "effect/Schema";
 import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { collapsePastedTextAsBlock } from "./composerPastedText";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
@@ -2369,6 +2370,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     if (options?.clipboardData) {
       text = importPastedComposerText(options.clipboardData, importContextFragment);
+      // Same fold as the editor's paste: a stray paste lands folded, not as a dump.
+      text = collapsePastedTextAsBlock(text) ?? text;
     }
     const prompt = promptRef.current;
     const cursor = position === "cursor" ? readComposerSnapshot().expandedCursor : prompt.length;
@@ -2453,6 +2456,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const onComposerCommandKeyStable = useStableCallback(onComposerCommandKey);
   const isPathQueryActiveStable = useStableCallback(
     () => resolveActiveComposerTrigger().trigger?.kind === "path",
+  );
+  // Reads without consuming: the editor's paste runs before the bubbling handler that resets it.
+  const isPasteAsTextArmedStable = useStableCallback(
+    () => Date.now() <= pasteAsTextShortcutUntilRef.current,
   );
 
   const insertComposerTextAtEnd: ChatComposerHandle["insertTextAtEnd"] = (text, options) => {
@@ -3345,6 +3352,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     richTextEnabled={settings.composerRichTextEnabled}
                     literalText={isLiteralPendingAnswer}
                     isPathQueryActive={isPathQueryActiveStable}
+                    isPasteAsTextArmed={isPasteAsTextArmedStable}
                     value={activePendingProgress ? activePendingProgress.customAnswer : prompt}
                     cursor={composerCursor}
                     contextRecords={composerContextRecords}

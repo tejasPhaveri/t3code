@@ -8,6 +8,11 @@ import { describe, expect, it, onTestFinished } from "vite-plus/test";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 
 import {
+  PASTED_CONTENT_FENCE_LANGUAGE,
+  collapsePastedTextAsBlock,
+} from "./components/chat/composerPastedText";
+
+import {
   collapseExpandedComposerCursor,
   expandCollapsedComposerCursor,
   pastedPathQueryLength,
@@ -1114,5 +1119,40 @@ describe("inline code entry", () => {
     expect(editor.state.doc.toJSON()).toEqual(before);
     editor.commands.setTextSelection(editor.state.doc.content.size - 1);
     expect(editor.state.doc.toJSON()).toEqual(before);
+  });
+});
+
+describe("collapsed pasted content", () => {
+  const paste = [
+    "Page Context:",
+    "Path: /app",
+    "Title: OA Test · Officers Assist",
+    "",
+    "Selected Element Context:",
+    "Component: xn",
+    "Selector: .flex > .flex > .justify-end",
+    "display: flex;",
+    "width: 640.062px;",
+    "margin-left: 234.703px;",
+    "justify-content: flex-end;",
+    "align-items: center;",
+  ].join("\n");
+
+  it("round-trips a folded paste unchanged, so reopening the draft shows it folded", () => {
+    const block = collapsePastedTextAsBlock(paste)!;
+    const map = roundTrip(block);
+    expect(map.value).toBe(block);
+    // The fence keeps the text verbatim for the agent.
+    expect(map.value).toContain(paste);
+    expect(map.runs.some((run) => run.nodeName === "codeBlock")).toBe(true);
+  });
+
+  it("keeps the pasted fence language so the composer can recognize the block", () => {
+    const block = collapsePastedTextAsBlock(paste)!;
+    const json = buildDocJson(block, () => null);
+    const code = json.content.find((node) => node.type === "codeBlock") as
+      | { attrs?: { language?: string } }
+      | undefined;
+    expect(code?.attrs?.language).toBe(PASTED_CONTENT_FENCE_LANGUAGE);
   });
 });

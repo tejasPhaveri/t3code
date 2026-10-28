@@ -34,11 +34,13 @@ function Composer({
   richTextEnabled,
   skills,
   onChange,
+  isPasteAsTextArmed,
 }: {
   value: string;
   richTextEnabled: boolean;
   skills: ReadonlyArray<ServerProviderSkill>;
   onChange?: ComposerPromptEditorProps["onChange"] | undefined;
+  isPasteAsTextArmed?: (() => boolean) | undefined;
 }) {
   const [prompt, setPrompt] = useState({ value, cursor: value.length });
   return (
@@ -51,6 +53,7 @@ function Composer({
       skills={skills}
       disabled={false}
       placeholder=""
+      isPasteAsTextArmed={isPasteAsTextArmed}
       onChange={(...args) => {
         setPrompt({ value: args[0], cursor: args[1] });
         onChange?.(...args);
@@ -65,9 +68,16 @@ function composer(
   richTextEnabled = true,
   skills: ReadonlyArray<ServerProviderSkill> = [],
   onChange?: ComposerPromptEditorProps["onChange"],
+  isPasteAsTextArmed?: () => boolean,
 ) {
   return (
-    <Composer value={value} richTextEnabled={richTextEnabled} skills={skills} onChange={onChange} />
+    <Composer
+      value={value}
+      richTextEnabled={richTextEnabled}
+      skills={skills}
+      onChange={onChange}
+      isPasteAsTextArmed={isPasteAsTextArmed}
+    />
   );
 }
 
@@ -435,5 +445,91 @@ describe("an Arabic line", () => {
     expect(editor.view.coordsAtPos(editor.state.selection.head).left).toBeGreaterThan(
       box.left + box.width / 2,
     );
+  });
+});
+
+describe("collapsed pasted content", () => {
+  const pageContextPaste = [
+    "Page Context:",
+    "Path: /app",
+    "Query: view=payroll-hub&tab=pending",
+    "Title: OA Test · Officers Assist",
+    "",
+    "Selected Element Context:",
+    "Component: xn",
+    "Selector: .flex > .flex > .justify-end",
+    "display: flex;",
+    "width: 640.062px;",
+    "justify-content: flex-end;",
+    "align-items: center;",
+  ].join("\n");
+
+  const pasteInto = async (editor: Editor, text: string) => {
+    await act(async () => {
+      editor.commands.focus("end");
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", text);
+      editor.view.dom.dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData, cancelable: true }),
+      );
+    });
+  };
+
+  it("folds a long dump to one header while keeping every character for the agent", async () => {
+    await using screen = await mountEditor("");
+    const { editor } = screen;
+    await pasteInto(editor, pageContextPaste);
+
+    await expect.element(screen.getByText("Pasted content")).toBeInTheDocument();
+    await expect.element(screen.getByText(/\d+ lines/)).toBeInTheDocument();
+    // The agent receives the text itself, not a summary.
+    expect(serializeEditorDoc(editor.state.doc).value).toContain(pageContextPaste);
+  });
+
+  it("leaves a short paste inline so it stays readable", async () => {
+    await using screen = await mountEditor("");
+    const { editor } = screen;
+    await pasteInto(editor, "fix the header");
+
+    await expect.element(screen.getByText("Pasted content")).not.toBeInTheDocument();
+    expect(serializeEditorDoc(editor.state.doc).value).toContain("fix the header");
+  });
+
+  it("leaves the paste inline when paste-as-text is armed", async () => {
+    let armed = true;
+    await using screen = await mountEditor("", true, [], undefined, () => armed);
+    const { editor } = screen;
+    await pasteInto(editor, pageContextPaste);
+
+    await expect.element(screen.getByText("Pasted content")).not.toBeInTheDocument();
+    expect(serializeEditorDoc(editor.state.doc).value).toContain(pageContextPaste);
+    armed = false;
+  });
+
+  it("keeps a pasted block expanded while the user types elsewhere", async () => {
+    await using screen = await mountEditor("");
+    const { editor } = screen;
+    await act(async () => {
+      editor.commands.focus("end");
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", pageContextPaste);
+      editor.view.dom.dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData, cancelable: true }),
+      );
+    });
+    const header = screen.getByRole("button", { name: /Pasted content/ });
+    await act(async () => {
+      (header.element() as HTMLElement).click();
+    });
+    await act(async () => {
+      editor.commands.insertContentAt(1, "x");
+    });
+    // A rebuild that dropped the toggle would collapse it again.
+    expect(
+      screen
+        .getByRole("button", { name: /Pasted content/ })
+        .element()
+        .getAttribute("aria-expanded"),
+    ).toBe("true");
   });
 });
