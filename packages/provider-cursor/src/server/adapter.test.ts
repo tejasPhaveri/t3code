@@ -324,123 +324,155 @@ describe("CursorAdapterV2", () => {
       failure: null,
       answers: [],
     },
-  ])("ends the turn with $reason", ({ updates = [], wait, failure, answers }) =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "cursor-v2-failure-" });
-      const instanceId = ProviderInstanceId.make("cursor");
-      const threadId = ThreadId.make("cursor-failure-thread");
-      const modelSelection = { instanceId, model: "claude-fable-5" };
-      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        cwd: workspace,
-      });
-      const adapter = yield* makeCursorAdapterV2({
-        instanceId,
-        settings: yield* decodeCursorSettings({}),
-        environment: { HOME: workspace },
-      }).pipe(
-        Effect.provideService(CursorAgentSdk.CursorAgentSdkRunner, {
-          assertComplete: Effect.void,
-          open: () =>
-            Effect.succeed({
-              agentId: "native-cursor-failure",
-              listMessages: Effect.succeed([]),
-              close: Effect.void,
-              send: (input) =>
-                Effect.gen(function* () {
-                  for (const update of updates) {
-                    yield* input.onDelta!(update).pipe(Effect.orDie);
-                  }
-                  return {
-                    agentId: "native-cursor-failure",
-                    runId: "native-cursor-run",
-                    wait,
-                    cancel: Effect.void,
-                  };
-                }),
-            }),
-        }),
-        Effect.provide(TestProviderHost.layer({ cwd: workspace })),
-      );
-      const runtime = yield* adapter.openSession({
-        threadId,
-        providerSessionId: ProviderSessionId.make("cursor-failure-session"),
-        modelSelection,
-        runtimePolicy,
-      });
-      const providerThread = yield* runtime.ensureThread({
-        threadId,
-        modelSelection,
-        runtimePolicy,
-      });
-      const now = yield* DateTime.now;
-      yield* runtime.startTurn({
-        threadId,
-        providerThread,
-        modelSelection,
-        runtimePolicy,
-        runId: RunId.make("cursor-failure-run"),
-        runOrdinal: 1,
-        providerTurnOrdinal: 1,
-        attemptId: RunAttemptId.make("cursor-failure-attempt"),
-        rootNodeId: NodeId.make("cursor-failure-root"),
-        appThread: {
-          id: threadId,
-          projectId: ProjectId.make("cursor-failure-project"),
-          createdBy: "user",
-          creationSource: "web",
-          title: "Cursor failure",
-          providerInstanceId: instanceId,
-          modelSelection,
+    {
+      reason: "one reasoning node write per state while thinking streams",
+      updates: [
+        { type: "thinking-delta", text: "Let me " },
+        { type: "thinking-delta", text: "look at " },
+        { type: "thinking-delta", text: "the build." },
+        { type: "thinking-completed", thinkingDurationMs: 1 },
+      ] satisfies ReadonlyArray<InteractionUpdate>,
+      wait: Effect.succeed({
+        id: "native-cursor-run",
+        requestId: "native-request",
+        status: "finished" as const,
+        model: { id: "claude-fable-5" },
+        durationMs: 1,
+      }),
+      failure: null,
+      reasoningNodeStatuses: ["running", "completed"],
+    },
+  ])(
+    "ends the turn with $reason",
+    ({ updates = [], wait, failure, answers, reasoningNodeStatuses }) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const workspace = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "cursor-v2-failure-",
+        });
+        const instanceId = ProviderInstanceId.make("cursor");
+        const threadId = ThreadId.make("cursor-failure-thread");
+        const modelSelection = { instanceId, model: "claude-fable-5" };
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: "full-access",
           interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          activeProviderThreadId: providerThread.id,
-          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
-          forkedFrom: null,
-          createdAt: now,
-          updatedAt: now,
-          archivedAt: null,
-          settledOverride: null,
-          settledAt: null,
-          lastVisitedAt: null,
-          deletedAt: null,
-        },
-        message: {
-          messageId: MessageId.make("cursor-failure-message"),
-          createdBy: "user",
-          creationSource: "web",
-          text: "hi",
-          attachments: [],
-        },
-      });
-      const events = yield* runtime.events.pipe(
-        Stream.takeUntil((event) => event.type === "turn.terminal"),
-        Stream.runCollect,
-      );
-      const terminal = events.find((event) => event.type === "turn.terminal");
-      assert.equal(terminal?.status, failure === null ? "completed" : "failed");
-      assert.equal(terminal?.failure?.class, failure?.class);
-      assert.equal(terminal?.failure?.message, failure?.message);
-      if (answers !== undefined) {
-        assert.deepEqual(
-          events.flatMap((event) =>
-            event.type === "message.updated" && event.message.role === "assistant"
-              ? [event.message.text]
-              : [],
-          ),
-          answers,
+          cwd: workspace,
+        });
+        const adapter = yield* makeCursorAdapterV2({
+          instanceId,
+          settings: yield* decodeCursorSettings({}),
+          environment: { HOME: workspace },
+        }).pipe(
+          Effect.provideService(CursorAgentSdk.CursorAgentSdkRunner, {
+            assertComplete: Effect.void,
+            open: () =>
+              Effect.succeed({
+                agentId: "native-cursor-failure",
+                listMessages: Effect.succeed([]),
+                close: Effect.void,
+                send: (input) =>
+                  Effect.gen(function* () {
+                    for (const update of updates) {
+                      yield* input.onDelta!(update).pipe(Effect.orDie);
+                    }
+                    return {
+                      agentId: "native-cursor-failure",
+                      runId: "native-cursor-run",
+                      wait,
+                      cancel: Effect.void,
+                    };
+                  }),
+              }),
+          }),
+          Effect.provide(TestProviderHost.layer({ cwd: workspace })),
         );
-      }
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(
-        Layer.mergeAll(NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer),
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("cursor-failure-session"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const now = yield* DateTime.now;
+        yield* runtime.startTurn({
+          threadId,
+          providerThread,
+          modelSelection,
+          runtimePolicy,
+          runId: RunId.make("cursor-failure-run"),
+          runOrdinal: 1,
+          providerTurnOrdinal: 1,
+          attemptId: RunAttemptId.make("cursor-failure-attempt"),
+          rootNodeId: NodeId.make("cursor-failure-root"),
+          appThread: {
+            id: threadId,
+            projectId: ProjectId.make("cursor-failure-project"),
+            createdBy: "user",
+            creationSource: "web",
+            title: "Cursor failure",
+            providerInstanceId: instanceId,
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            activeProviderThreadId: providerThread.id,
+            lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+            forkedFrom: null,
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: null,
+          },
+          message: {
+            messageId: MessageId.make("cursor-failure-message"),
+            createdBy: "user",
+            creationSource: "web",
+            text: "hi",
+            attachments: [],
+          },
+        });
+        const events = yield* runtime.events.pipe(
+          Stream.takeUntil((event) => event.type === "turn.terminal"),
+          Stream.runCollect,
+        );
+        const terminal = events.find((event) => event.type === "turn.terminal");
+        assert.equal(terminal?.status, failure === null ? "completed" : "failed");
+        assert.equal(terminal?.failure?.class, failure?.class);
+        assert.equal(terminal?.failure?.message, failure?.message);
+        if (answers !== undefined) {
+          assert.deepEqual(
+            events.flatMap((event) =>
+              event.type === "message.updated" && event.message.role === "assistant"
+                ? [event.message.text]
+                : [],
+            ),
+            answers,
+          );
+        }
+        if (reasoningNodeStatuses !== undefined) {
+          assert.deepEqual(
+            events.flatMap((event) =>
+              event.type === "node.updated" && event.node.kind === "reasoning"
+                ? [event.node.status]
+                : [],
+            ),
+            reasoningNodeStatuses,
+          );
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer),
+        ),
       ),
-    ),
   );
 
   it.effect("fails standalone SDK transport diagnostics and sends compaction as /compress", () =>

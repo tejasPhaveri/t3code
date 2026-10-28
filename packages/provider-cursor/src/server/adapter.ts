@@ -841,6 +841,7 @@ interface ActiveCursorTextSegment {
   readonly nativeItemId: string;
   readonly startedAt: DateTime.Utc;
   text: string;
+  runningNodeEmitted: boolean;
 }
 
 interface ActiveCursorTextStream {
@@ -988,27 +989,31 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             nativeId: segment.nativeItemId,
             strength: "weak" as const,
           };
-          yield* emitProviderEvent({
-            type: "node.updated",
-            driver: CursorAgentSdk.CURSOR_PROVIDER,
-            node: {
-              id: nodeId,
-              threadId: context.input.threadId,
-              runId: context.input.runId,
-              parentNodeId: context.input.rootNodeId,
-              rootNodeId: context.input.rootNodeId,
-              kind: "assistant_message",
-              status: completed ? "completed" : "running",
-              countsForRun: false,
-              providerThreadId: context.input.providerThread.id,
-              providerTurnId: context.providerTurnId,
-              nativeItemRef,
-              runtimeRequestId: null,
-              checkpointScopeId: null,
-              startedAt: segment.startedAt,
-              completedAt: completed ? now : null,
-            },
-          });
+          // The running node never changes between deltas, and each re-send costs the server a read.
+          if (completed || !segment.runningNodeEmitted) {
+            segment.runningNodeEmitted = true;
+            yield* emitProviderEvent({
+              type: "node.updated",
+              driver: CursorAgentSdk.CURSOR_PROVIDER,
+              node: {
+                id: nodeId,
+                threadId: context.input.threadId,
+                runId: context.input.runId,
+                parentNodeId: context.input.rootNodeId,
+                rootNodeId: context.input.rootNodeId,
+                kind: "assistant_message",
+                status: completed ? "completed" : "running",
+                countsForRun: false,
+                providerThreadId: context.input.providerThread.id,
+                providerTurnId: context.providerTurnId,
+                nativeItemRef,
+                runtimeRequestId: null,
+                checkpointScopeId: null,
+                startedAt: segment.startedAt,
+                completedAt: completed ? now : null,
+              },
+            });
+          }
           yield* emitProviderEvent({
             type: "message.updated",
             driver: CursorAgentSdk.CURSOR_PROVIDER,
@@ -1076,27 +1081,30 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             nativeId: segment.nativeItemId,
             strength: "weak" as const,
           };
-          yield* emitProviderEvent({
-            type: "node.updated",
-            driver: CursorAgentSdk.CURSOR_PROVIDER,
-            node: {
-              id: nodeId,
-              threadId: context.input.threadId,
-              runId: context.input.runId,
-              parentNodeId: context.input.rootNodeId,
-              rootNodeId: context.input.rootNodeId,
-              kind: "reasoning",
-              status: completed ? "completed" : "running",
-              countsForRun: false,
-              providerThreadId: context.input.providerThread.id,
-              providerTurnId: context.providerTurnId,
-              nativeItemRef,
-              runtimeRequestId: null,
-              checkpointScopeId: null,
-              startedAt: segment.startedAt,
-              completedAt: completed ? now : null,
-            },
-          });
+          if (completed || !segment.runningNodeEmitted) {
+            segment.runningNodeEmitted = true;
+            yield* emitProviderEvent({
+              type: "node.updated",
+              driver: CursorAgentSdk.CURSOR_PROVIDER,
+              node: {
+                id: nodeId,
+                threadId: context.input.threadId,
+                runId: context.input.runId,
+                parentNodeId: context.input.rootNodeId,
+                rootNodeId: context.input.rootNodeId,
+                kind: "reasoning",
+                status: completed ? "completed" : "running",
+                countsForRun: false,
+                providerThreadId: context.input.providerThread.id,
+                providerTurnId: context.providerTurnId,
+                nativeItemRef,
+                runtimeRequestId: null,
+                checkpointScopeId: null,
+                startedAt: segment.startedAt,
+                completedAt: completed ? now : null,
+              },
+            });
+          }
           yield* emitProviderEvent({
             type: "turn_item.updated",
             driver: CursorAgentSdk.CURSOR_PROVIDER,
@@ -1134,6 +1142,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               nativeItemId: `${input.kind}:${input.context.run.runId}:${input.stream.nextSegment}`,
               startedAt: yield* DateTime.now,
               text: "",
+              runningNodeEmitted: false,
             };
           }
           input.stream.current.text += input.text;
