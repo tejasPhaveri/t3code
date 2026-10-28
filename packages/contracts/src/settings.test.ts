@@ -370,3 +370,11 @@ describe("server model preferences", () => {
     expect(decodeServerSettingsPatch(input)).toEqual(input);
   });
 });
+
+describe("this fork's client defaults", () => {
+  const decodeClientSettings = Schema.decodeSync(ClientSettingsSchema);
+
+  it("groups the sidebar by project unless the user turns it off", () => {
+    expect(decodeClientSettings({}).boringSidebarEnabled).toBe(true);
+  });
+});

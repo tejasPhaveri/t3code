@@ -144,10 +144,11 @@ choice.
 While this is on, the active list is ordered by when each thread last came back to you, so you
 cannot drag or move threads within it. Your saved order returns when you turn it off.
 
-### Group threads by project (beta)
+### Group threads by project
 
-Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
-threads in a folder for each project. A project with no active threads has no folder until you
+Active threads sit in a folder for each project. This is on by default; turn it off with
+**Settings → Labs → Boring sidebar (group by project)** on web and desktop. A project with no
+active threads has no folder until you
 pick it in the project filter. Click a folder to open or close it. A closed folder shows how
 many threads it holds, and a dot when one of them needs you. Use the pen button on a folder, or
 right-click it, to start a thread in that project. Pinned threads stay above the folders, and
