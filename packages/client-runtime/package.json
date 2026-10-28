@@ -487,6 +487,10 @@
       "types": "./src/state/gitGraph.ts",
       "default": "./src/state/gitGraph.ts"
     },
+    "./state/cloud-agents": {
+      "types": "./src/state/cloudAgents.ts",
+      "default": "./src/state/cloudAgents.ts"
+    },
     "./provider-clients": {
       "types": "./src/providerClients.ts",
       "default": "./src/providerClients.ts"
