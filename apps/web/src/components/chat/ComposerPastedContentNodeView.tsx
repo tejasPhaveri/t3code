@@ -3,14 +3,15 @@ import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from "@tiptap/re
 import { useState } from "react";
 
 import { useRenderedAppearance } from "../../hooks/useTheme";
+import { cn } from "~/lib/utils";
 import { MarkdownCodeBlockFrame } from "./MarkdownCodeBlock";
 import { pastedTextLineCount } from "./composerPastedText";
 
 /**
- * A pasted block shows a few lines instead of the whole dump. The text stays in
- * the document, so the agent still receives all of it, and the fold never edits
- * the draft. It is clamped rather than hidden, so a caret that moves into it
- * stays reachable.
+ * A pasted block opens as a single truncated line, since the dump itself is read
+ * by the agent rather than by the person writing the message. The text stays in
+ * the document, so the agent still receives all of it, and folding never edits
+ * the draft.
  */
 export function ComposerPastedContentNodeView({ node, editor }: NodeViewProps) {
   const resolvedTheme = useRenderedAppearance();
@@ -25,6 +26,8 @@ export function ComposerPastedContentNodeView({ node, editor }: NodeViewProps) {
       language="text"
       fenceTitle={null}
       theme={resolvedTheme}
+      // The frame's wrap rule sets `pre-wrap` on the code, which would defeat the single line.
+      wrapped={expanded}
       headerProps={{ contentEditable: false }}
       title={
         <button
@@ -47,15 +50,20 @@ export function ComposerPastedContentNodeView({ node, editor }: NodeViewProps) {
     >
       <div className="chat-markdown-shiki">
         <pre
-          className={
-            expanded
-              ? "max-w-full overflow-x-auto px-3 pt-1 pb-2"
-              : "max-h-24 max-w-full overflow-auto px-3 pt-1 pb-2"
-          }
+          className={cn(
+            "max-w-full px-3 pt-1 pb-2",
+            expanded ? "overflow-x-auto" : "overflow-hidden",
+          )}
         >
+          {/* Tiptap writes `white-space: pre-wrap` inline on the code element, so the collapsed
+              state has to override it there; a class cannot win against that style. */}
           <NodeViewContent<"code">
             as="code"
-            className="block min-h-[1lh] font-mono whitespace-pre-wrap text-inherit [overflow-wrap:anywhere]"
+            className={cn(
+              "block min-h-[1lh] font-mono text-inherit [overflow-wrap:anywhere]",
+              expanded ? "whitespace-pre-wrap" : "truncate",
+            )}
+            style={expanded ? undefined : { whiteSpace: "nowrap" }}
           />
         </pre>
       </div>

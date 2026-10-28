@@ -13,8 +13,8 @@ hardware keyboard, use `Cmd+Shift+V` on Apple devices or `Ctrl+Shift+V` elsewher
 to keep a large paste editable in the composer instead.
 
 A smaller paste that runs to many lines, such as a page dump or a stack trace, lands
-folded as **Pasted content** with a line and character count, so it takes a few rows
-instead of the whole screen. Click the header to expand or collapse it. The message
+folded as **Pasted content** with a line and character count, so it takes a single
+truncated line instead of the whole screen. Click the header to expand or collapse it. The message
 still carries every character, so the agent sees the paste in full.
 
 ## Formatting

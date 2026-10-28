@@ -486,6 +486,18 @@ describe("collapsed pasted content", () => {
     expect(serializeEditorDoc(editor.state.doc).value).toContain(pageContextPaste);
   });
 
+  it("shows the folded paste as one truncated line", async () => {
+    await using screen = await mountEditor("");
+    const { editor } = screen;
+    await pasteInto(editor, pageContextPaste);
+
+    const code = screen.container.querySelector("pre code");
+    if (!(code instanceof HTMLElement)) throw new Error("Pasted block did not render");
+    expect(getComputedStyle(code).whiteSpace).toBe("nowrap");
+    // A single line: the nowrap folds the newlines, so the box is one text row tall.
+    expect(code.getBoundingClientRect().height).toBeLessThan(30);
+  });
+
   it("leaves a short paste inline so it stays readable", async () => {
     await using screen = await mountEditor("");
     const { editor } = screen;
