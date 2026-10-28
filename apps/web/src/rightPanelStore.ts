@@ -614,6 +614,23 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
   return { byThreadKey, threadPanelVisibilityByThreadKey };
 }
 
+type SurfaceOpenedListener = (ref: ScopedThreadRef, surface: RightPanelSurface) => void;
+let surfaceOpenedListener: SurfaceOpenedListener | null = null;
+
+/** Hears each tab this window opens; another window's opens arrive as state, not through here. */
+export function setRightPanelSurfaceOpenedListener(listener: SurfaceOpenedListener | null): void {
+  surfaceOpenedListener = listener;
+}
+
+function reportOpened(ref: ScopedThreadRef): void {
+  if (surfaceOpenedListener === null) return;
+  const thread = useRightPanelStore.getState().byThreadKey[scopedThreadKey(ref)];
+  const surface = thread?.isOpen
+    ? thread.surfaces.find((entry) => entry.id === thread.activeSurfaceId)
+    : undefined;
+  if (surface) surfaceOpenedListener(ref, surface);
+}
+
 export const useRightPanelStore = create<RightPanelStoreState>()(
   persist(
     (set, get) => ({
@@ -670,7 +687,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         });
         return opened;
       },
-      open: (ref, kind) =>
+      open: (ref, kind) => {
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             if (kind === "preview") {
@@ -679,8 +696,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             }
             return upsertSurface(current, singletonSurface(kind));
           }),
-        ),
-      openDevice: (ref, target, automatic = false) =>
+        );
+        reportOpened(ref);
+      },
+      openDevice: (ref, target, automatic = false) => {
         set((state) =>
           (automatic ? automaticUpdate : userAction)(state, scopedThreadKey(ref), (current) => {
             const id =
@@ -702,7 +721,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               existing ?? surface,
             );
           }),
-        ),
+        );
+        if (!automatic) reportOpened(ref);
+      },
       renameDevice: (ref, surfaceId, title) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => ({
@@ -714,7 +735,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ),
           })),
         ),
-      openBrowser: (ref, tabId) =>
+      openBrowser: (ref, tabId) => {
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             const surface = browserSurface(tabId);
@@ -723,8 +744,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               : current.surfaces;
             return upsertSurface({ ...current, surfaces: withoutPlaceholder }, surface);
           }),
-        ),
-      openPullRequest: (ref, target) =>
+        );
+        reportOpened(ref);
+      },
+      openPullRequest: (ref, target) => {
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             const surface = pullRequestSurface(target);
@@ -740,7 +763,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 }
               : next;
           }),
-        ),
+        );
+        reportOpened(ref);
+      },
       setPullRequestDetailTab: (ref, surfaceId, detailTab) =>
         set((state) => {
           const threadKey = scopedThreadKey(ref);
@@ -758,7 +783,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ),
           }));
         }),
-      openFile: (ref, requestedPath, line) =>
+      openFile: (ref, requestedPath, line) => {
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             if (requestedPath === ".") {
@@ -792,8 +817,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 : [...withoutStandaloneExplorer, surface],
             };
           }),
-        ),
-      navigateFolder: (ref, surfaceId, relativePath, folderTrail, keepSource = false) =>
+        );
+        reportOpened(ref);
+      },
+      navigateFolder: (ref, surfaceId, relativePath, folderTrail, keepSource = false) => {
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             const index = current.surfaces.findIndex((surface) => surface.id === surfaceId);
@@ -818,8 +845,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             });
             return { ...current, isOpen: true, activeSurfaceId: target.id, surfaces };
           }),
-        ),
-      openAttachment: (ref, attachment) =>
+        );
+        reportOpened(ref);
+      },
+      openAttachment: (ref, attachment) => {
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             const withoutStandaloneExplorer = current.surfaces.filter(
@@ -830,13 +859,17 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               attachmentSurface(attachment),
             );
           }),
-        ),
-      openTerminal: (ref, terminalId) =>
+        );
+        reportOpened(ref);
+      },
+      openTerminal: (ref, terminalId) => {
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) =>
             upsertSurface(current, terminalSurface(terminalId)),
           ),
-        ),
+        );
+        reportOpened(ref);
+      },
       splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => ({
@@ -1131,7 +1164,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             isOpen: !current.isOpen,
           })),
         ),
-      toggle: (ref, kind) =>
+      toggle: (ref, kind) => {
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             const active = current.surfaces.find(
@@ -1146,7 +1179,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             }
             return upsertSurface(current, singletonSurface(kind));
           }),
-        ),
+        );
+        reportOpened(ref);
+      },
       setThreadPanelOpen: (ref, presentation, open) =>
         set((state) => ({
           threadPanelVisibilityByThreadKey: updateThreadPanelVisibilityMap(

@@ -12,6 +12,7 @@ import {
   selectActiveRightPanelSurface,
   selectThreadPanelVisibility,
   selectThreadRightPanelState,
+  setRightPanelSurfaceOpenedListener,
   useRightPanelStore,
 } from "./rightPanelStore";
 
@@ -468,6 +469,33 @@ describe("rightPanelStore", () => {
 
     expect(store.openProactive(refA, completedDiff, revision)).toBe(true);
     expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("diff");
+  });
+
+  it("reports the tabs this window opens, not ones it reconciles, activates, or closes", () => {
+    const opened: string[] = [];
+    setRightPanelSurfaceOpenedListener((ref, surface) =>
+      opened.push(`${ref.threadId}:${surface.id}`),
+    );
+    using _listener = { [Symbol.dispose]: () => setRightPanelSurfaceOpenedListener(null) };
+    const store = useRightPanelStore.getState();
+
+    store.openFile(refA, "src/app.ts");
+    store.openBrowser(refA, "tab-1");
+    store.reconcileBrowserSurfaces(refA, ["tab-1", "agent-browser"]);
+    store.activateSurface(refA, "browser:agent-browser");
+    store.closeSurface(refA, "browser:agent-browser");
+    store.openDevice(
+      refB,
+      { hostId: "host", deviceId: "phone", platform: "ios", name: "Phone" },
+      true,
+    );
+    store.openFile(refA, "src/app.ts", 12);
+
+    expect(opened).toEqual([
+      "thread-A:file:src/app.ts",
+      "thread-A:browser:tab-1",
+      "thread-A:file:src/app.ts",
+    ]);
   });
 
   it("keeps a maximized panel per thread without counting it as a manual choice", () => {

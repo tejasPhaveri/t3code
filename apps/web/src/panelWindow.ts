@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 
 import { isElectron } from "./env";
+import type { PanelWindowRole } from "./sharedTabOrder";
 
 /**
  * The desktop shell can move the right panel into a window of its own, which loads this same app
@@ -52,6 +53,12 @@ function readPanelWindowOpen(): boolean {
 export function useRightPanelDetached(): boolean {
   const open = useSyncExternalStore(subscribe, readPanelWindowOpen);
   return !isPanelWindow && open;
+}
+
+/** Which window this is while the panel is split across two, read outside React. */
+export function readPanelWindowRole(): PanelWindowRole | null {
+  if (isPanelWindow) return "panel";
+  return panelWindowBridge()?.isOpen() ? "main" : null;
 }
 
 export function setRightPanelDetached(detached: boolean): void {

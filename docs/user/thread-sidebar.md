@@ -257,6 +257,12 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
+## Save panel sizes
+
+Drag the right panel's edge to the size you want, open **Panel width presets** at the top right of
+the chat, name the size, and choose **Save**. Pick a saved size, or **Default**, from the same menu to
+resize the panel beside the chat in one step.
+
 ## Put the panel on another display
 
 On desktop, choose **Move panel to its own window** at the top right of the right panel. The panel
@@ -267,7 +273,8 @@ between windows; their sign-ins stay.
 
 To keep some tabs beside the chat while the rest stay on the other display, right-click a tab and
 choose **Show in main window**. Every chat in the project keeps that tab there. Choose **Show in
-panel window** to send it back. New tabs open in the panel window.
+panel window** to send it back. A new tab opens in the window you opened it from. To add one beside
+the chat, toggle the right panel in the main window and use **+**.
 
 ## Snooze until later
 

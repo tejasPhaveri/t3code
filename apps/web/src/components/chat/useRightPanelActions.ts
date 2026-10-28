@@ -5,7 +5,7 @@ import { formatFilePathForClipboard } from "@t3tools/client-runtime/media-action
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { resolveExplicitDiffOpenOnActivate } from "../ChatView.logic";
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { isPanelWindow, setRightPanelDetached, useRightPanelDetached } from "../../panelWindow";
+import { isPanelWindow, useRightPanelDetached } from "../../panelWindow";
 import { type ScopedThreadRef, type RunId } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { useEffect } from "react";
@@ -62,6 +62,8 @@ interface RightPanelActionsInput {
   readonly explicitDiffOpenRef: { current: ScopedThreadRef | null };
   readonly onDiffPanelOpen: (() => void) | undefined;
   readonly closeRightPanelSurface: (surface: RightPanelSurface) => void;
+  /** Shows or hides the main window's own panel while the panel has its own window. */
+  readonly setMainPanelOpen: (open: boolean) => void;
 }
 
 /**
@@ -94,7 +96,9 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     activeProjectCwd,
     explicitDiffOpenRef,
     onDiffPanelOpen,
+    setMainPanelOpen,
   } = input;
+  const rightPanelDetached = useRightPanelDetached();
 
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const onToggleDiff = () => {
@@ -197,6 +201,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
       useRightPanelStore.getState().setMaximized(activeThreadRef, false);
       useRightPanelStore.getState().close(activeThreadRef);
     }
+    if (rightPanelDetached) setMainPanelOpen(false);
   };
   const closePreviewPanelStable = useStableCallback(closePreviewPanel);
   const togglePreviewPanel = () => {
@@ -233,12 +238,11 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     }
   };
   const activateRightPanelSurfaceStable = useStableCallback(activateRightPanelSurface);
-  const rightPanelDetached = useRightPanelDetached();
   const toggleRightPanel = () => {
     if (!activeThreadRef || isPanelWindow) return;
-    // The panel's own window keeps it; toggling from the main window brings that window forward.
+    // The panel's own window keeps its tabs; the main window toggles its own share of them.
     if (rightPanelDetached) {
-      setRightPanelDetached(true);
+      setMainPanelOpen(!rightPanelOpen);
       return;
     }
     if (rightPanelOpen) {

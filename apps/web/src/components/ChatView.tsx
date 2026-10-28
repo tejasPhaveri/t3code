@@ -37,6 +37,8 @@ import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnviron
 import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
+import { RightPanelWidthPresetsControl } from "./chat/RightPanelWidthPresetsControl";
+import { rightPanelWidthStorageKey } from "../rightPanelWidthPresets";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -1176,10 +1178,20 @@ export default function ChatView(props: ChatViewProps) {
   );
   const canReuseTerminal = activeThreadKnownSessionsRaw !== null;
   const previewPanelOpen = activeRightPanelKind === "preview" && browserAvailable;
-  // While detached, the main window shows the panel exactly when it keeps tabs of its own.
+  // While detached, the main window shows the panel when it keeps tabs of its own, unless the user
+  // toggled it; a tab arriving after the toggle shows it again.
+  const [mainPanelToggle, setMainPanelToggle] = useState<{
+    open: boolean;
+    tabCount: number;
+  } | null>(null);
+  const mainTabCount = rightPanelState.surfaces.length;
+  const mainPanelOpen =
+    mainPanelToggle === null || mainTabCount > mainPanelToggle.tabCount
+      ? mainTabCount > 0
+      : mainPanelToggle.open;
+  const setMainPanelOpen = (open: boolean) => setMainPanelToggle({ open, tabCount: mainTabCount });
   const rightPanelOpen =
-    isPanelWindow ||
-    (rightPanelDetached ? rightPanelState.surfaces.length > 0 : rightPanelState.isOpen);
+    isPanelWindow || (rightPanelDetached ? mainPanelOpen : rightPanelState.isOpen);
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const rightPanelPresenceValue = {
@@ -2798,6 +2810,7 @@ export default function ChatView(props: ChatViewProps) {
     explicitDiffOpenRef,
     onDiffPanelOpen,
     closeRightPanelSurface,
+    setMainPanelOpen,
   });
   const pullRequestSurfaceAvailable = supportsPullRequests && pullRequestPanelTarget !== null;
   const nowMinute = useNowMinute();
@@ -3596,7 +3609,7 @@ export default function ChatView(props: ChatViewProps) {
     threadPanelPopoverHandle,
     threadPanelShortcutLabel: shortcutLabelForCommand(keybindings, "threadPanel.toggle"),
     rightPanelAvailable: activeProject !== null,
-    rightPanelOpen: rightPanelOpen || rightPanelDetached,
+    rightPanelOpen,
     rightPanelShortcutLabel: shortcutLabelForCommand(keybindings, "rightPanel.toggle"),
     onToggleTerminal: toggleTerminalVisibilityStable,
     onToggleThreadPanel: toggleThreadPanelStable,
@@ -3609,15 +3622,29 @@ export default function ChatView(props: ChatViewProps) {
     }
     setRightPanelDetached(!isPanelWindow);
   };
+  const exitRightPanelMaximized = () => {
+    if (activeThreadRef && rightPanelMaximized) {
+      useRightPanelStore.getState().setMaximized(activeThreadRef, false);
+    }
+  };
   const rightPanelWindowControl =
     canDetachRightPanel() && rightPanelOpen ? (
       <RightPanelWindowControl inPanelWindow={isPanelWindow} onToggle={moveRightPanelToWindow} />
+    ) : null;
+  const rightPanelWidthPresetsControl =
+    rightPanelOpen && !shouldUsePlanSidebarSheet && activeThreadKey !== null ? (
+      <RightPanelWidthPresetsControl
+        widthStorageKey={rightPanelWidthStorageKey(activeThreadKey)}
+        container={workspaceLayoutElement}
+        onApply={exitRightPanelMaximized}
+      />
     ) : null;
   // The panel window has no chat whose drawer, details or panel to toggle.
   const panelToggleControls = isPanelWindow ? (
     rightPanelWindowControl
   ) : (
     <>
+      {rightPanelWidthPresetsControl}
       {rightPanelWindowControl}
       <PanelLayoutControls
         {...panelToggleControlProps}
@@ -3631,16 +3658,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const reloadAllBrowserTabs = () => {
     if (!activeThreadRef) return;
-    const reloaded = reloadBrowserTabs(activeThreadRef.environmentId, browserTabIds);
-    toastManager.add(
-      stackedThreadToast({
-        type: "success",
-        title:
-          reloaded === 0
-            ? "No browser tabs to reload"
-            : `Reloading ${reloaded} browser ${reloaded === 1 ? "tab" : "tabs"}`,
-      }),
-    );
+    reloadBrowserTabs(activeThreadRef.environmentId, browserTabIds);
   };
   const panelLayoutControls = (
     <WorkspaceTitlebarControls
@@ -4296,7 +4314,7 @@ export default function ChatView(props: ChatViewProps) {
         <ChatRightPanel
           sheet={shouldUsePlanSidebarSheet}
           workspaceLayoutElement={workspaceLayoutElement}
-          widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
+          widthStorageKey={rightPanelWidthStorageKey(scopedThreadKey(activeThreadRef))}
           sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}
