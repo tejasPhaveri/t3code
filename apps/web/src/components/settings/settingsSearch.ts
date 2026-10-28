@@ -410,6 +410,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
   },
   {
+    id: "cloud-agents",
+    title: "Cloud agents",
+    to: "/settings/general",
+    searchTerms: ["cursor cloud agent remote hidden sidebar shelf observe"],
+  },
+  {
     id: "guest-links",
     title: "Guest links",
     to: "/settings/labs",

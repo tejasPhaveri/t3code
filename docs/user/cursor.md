@@ -12,8 +12,10 @@ TypeScript package. It does not use Cursor's ACP transport for V2 execution.
 - A model accepted by the Cursor SDK. `auto` is sent to the SDK as its `default` model selection.
 
 The adapter currently uses the SDK's local-agent runtime so runs operate in the selected T3 Code
-workspace. Cursor cloud agents need repository and cloud-environment configuration that T3 Code does
-not expose yet.
+workspace. T3 Code can list the cloud agents on your account but cannot start or steer them; Cursor
+cloud agents need repository and cloud-environment configuration that T3 Code does not expose yet.
+On web and desktop, turn on **Settings → General → Cloud agents** to list them in the sidebar. Each
+entry opens in Cursor, and T3 Code has no checkout, run, or checkpoint for it.
 
 ## Sign in
 

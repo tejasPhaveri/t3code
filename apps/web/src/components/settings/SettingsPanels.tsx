@@ -436,6 +436,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
+    ...(settings.sidebarCloudAgentsVisible !== DEFAULT_UNIFIED_SETTINGS.sidebarCloudAgentsVisible
+      ? ["Cloud agents"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -603,6 +606,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sidebarCloudAgentsVisible: DEFAULT_UNIFIED_SETTINGS.sidebarCloudAgentsVisible,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -867,6 +871,32 @@ export function GeneralSettingsPanel() {
                 updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
               }
               aria-label="Working section"
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("cloud-agents")}
+          description="Show agents running on your Cursor account's cloud, started outside T3 Code. They open in Cursor."
+          resetAction={
+            settings.sidebarCloudAgentsVisible !==
+            DEFAULT_UNIFIED_SETTINGS.sidebarCloudAgentsVisible ? (
+              <SettingResetButton
+                label="cloud agents"
+                onClick={() =>
+                  updateSettings({
+                    sidebarCloudAgentsVisible: DEFAULT_UNIFIED_SETTINGS.sidebarCloudAgentsVisible,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.sidebarCloudAgentsVisible}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarCloudAgentsVisible: Boolean(checked) })
+              }
+              aria-label="Cloud agents"
             />
           }
         />

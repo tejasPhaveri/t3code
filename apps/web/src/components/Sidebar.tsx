@@ -132,6 +132,8 @@ import {
   useQuietThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
+import { useSidebarCloudAgentRows } from "~/hooks/useSidebarCloudAgents";
+import { SidebarCloudAgentShelf } from "./sidebar/SidebarCloudAgentShelf";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { environmentProjects } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
@@ -298,6 +300,7 @@ const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
+const CLOUD_AGENTS_SHELF_EXPANDED_KEY = "t3code:sidebar:cloud-agents-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
 
 const inboxReturns = createInboxReturnTracker();
@@ -868,6 +871,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const cloudAgentRows = useSidebarCloudAgentRows();
+  const [cloudAgentsExpanded, setCloudAgentsExpanded] = useLocalStorage(
+    CLOUD_AGENTS_SHELF_EXPANDED_KEY,
+    false,
+    Schema.Boolean,
+  );
   const {
     settleThread,
     unsettleThread,
@@ -3349,6 +3358,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 </SortableContext>
               </DndContext>
             </TooltipProvider>
+          ) : null}
+          {!isSearchingThreads ? (
+            <SidebarCloudAgentShelf
+              rows={cloudAgentRows}
+              expanded={cloudAgentsExpanded}
+              onToggle={() => setCloudAgentsExpanded(!cloudAgentsExpanded)}
+            />
           ) : null}
           {!isSearchingThreads &&
           visibleDraftSessionCount === 0 &&
