@@ -3031,6 +3031,60 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
   });
 
   describe("worktree operations", () => {
+    it.effect(
+      "lands on the local branch of a remote ref instead of detaching and advances it",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          const remote = yield* makeTmpDir("git-vcs-driver-remote-");
+          const { initialBranch } = yield* initRepoWithCommit(cwd);
+          yield* git(remote, ["init", "--bare"]);
+          yield* git(cwd, ["remote", "add", "origin", remote]);
+          yield* git(cwd, ["push", "origin", `${initialBranch}:staging`]);
+          // Local copy of the branch, deliberately without an upstream.
+          yield* git(cwd, ["branch", "staging", initialBranch]);
+          yield* git(cwd, ["fetch", "-q", "origin"]);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const author = yield* makeTmpDir("git-vcs-driver-author-");
+          yield* git(cwd, ["clone", "-q", remote, author]);
+          yield* git(author, ["config", "user.email", "test@test.com"]);
+          yield* git(author, ["config", "user.name", "Test"]);
+          yield* git(author, ["switch", "-q", "staging"]);
+          yield* git(author, ["commit", "-q", "--allow-empty", "-m", "remote work"]);
+          const remoteCommit = yield* git(author, ["rev-parse", "HEAD"]);
+          yield* git(author, ["push", "-q", "origin", "staging"]);
+          yield* git(cwd, ["fetch", "origin"]);
+
+          const switched = yield* driver.switchRef({ cwd, refName: "origin/staging" });
+
+          assert.equal(switched.refName, "staging");
+          assert.equal(yield* git(cwd, ["rev-parse", "staging"]), remoteCommit);
+        }),
+    );
+
+    it.effect("leaves a diverged local branch alone when its remote ref is picked", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const remote = yield* makeTmpDir("git-vcs-driver-remote-");
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* git(remote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", remote]);
+        yield* git(cwd, ["push", "origin", `${initialBranch}:staging`]);
+        yield* git(cwd, ["branch", "staging", initialBranch]);
+        yield* git(cwd, ["switch", "-q", "staging"]);
+        yield* git(cwd, ["commit", "--allow-empty", "-m", "local only"]);
+        yield* git(cwd, ["switch", "-q", initialBranch]);
+        const localCommit = yield* git(cwd, ["rev-parse", "staging"]);
+        yield* git(cwd, ["fetch", "origin"]);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const switched = yield* driver.switchRef({ cwd, refName: "origin/staging" });
+
+        assert.equal(switched.refName, "staging");
+        assert.equal(yield* git(cwd, ["rev-parse", "staging"]), localCommit);
+      }),
+    );
+
     it.effect("uses parallel checkout without skipping filters or hooks", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

@@ -126,7 +126,7 @@ export function GitGraphPanel(props: {
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [findIndex, setFindIndex] = useState(0);
-  const [order, setOrder] = useState<GitGraphLogOrder>("date");
+  const [order, setOrder] = useState<GitGraphLogOrder>("topo");
   const [firstParent, setFirstParent] = useState(false);
   const [branchFilter, setBranchFilter] = useState<BranchFilterState>(DEFAULT_BRANCH_FILTER);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -706,7 +706,7 @@ export function GitGraphPanel(props: {
 
   const fetchAll = async () => {
     setFetching(true);
-    await runAction({ _tag: "Fetch" }, { success: "Fetched all remotes" });
+    await runAction({ _tag: "Fetch" });
     setFetching(false);
   };
 

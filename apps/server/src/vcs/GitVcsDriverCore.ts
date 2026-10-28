@@ -4267,6 +4267,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return { branch: targetBranch };
   });
 
+  // A local branch already stands for this remote branch, so bring it up to date rather than
+  // leaving the user on a branch that is behind the ref they picked. Diverged branches stay put.
+  const fastForwardToRemoteRef = Effect.fn("GitVcsDriver.fastForwardToRemoteRef")(function* (
+    cwd: string,
+    branch: string,
+    remoteRefName: string,
+  ) {
+    const isAncestor = yield* executeGit(
+      "GitVcsDriver.fastForwardToRemoteRef.isAncestor",
+      cwd,
+      ["merge-base", "--is-ancestor", `refs/heads/${branch}`, `refs/remotes/${remoteRefName}`],
+      { timeoutMs: 5_000, allowNonZeroExit: true },
+    ).pipe(Effect.map((result) => result.exitCode === 0));
+    if (!isAncestor) return;
+    yield* executeGitWithStableDiagnostics(
+      "GitVcsDriver.fastForwardToRemoteRef.merge",
+      cwd,
+      ["merge", "--ff-only", "--end-of-options", `refs/remotes/${remoteRefName}`],
+      { timeoutMs: 10_000, fallbackErrorDetail: "git merge failed" },
+    );
+  });
+
   const switchRef: GitVcsDriver.GitVcsDriver["Service"]["switchRef"] = Effect.fn("switchRef")(
     function* (input) {
       const [localInputExists, remoteExists] = yield* Effect.all(
@@ -4326,15 +4348,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             ).pipe(Effect.map((result) => result.exitCode === 0))
           : false;
 
+      // A remote branch git already has a local branch for lands on that branch, not detached.
+      const localBranchForRemote =
+        remoteExists && !localInputExists
+          ? (localTrackingBranch ??
+            (localTrackedBranchTargetExists ? localTrackedBranchCandidate : null))
+          : null;
+
       const checkoutArgs = localInputExists
         ? ["checkout", input.refName]
-        : remoteExists && !localTrackingBranch && localTrackedBranchTargetExists
-          ? ["checkout", input.refName]
-          : remoteExists && !localTrackingBranch
+        : localBranchForRemote !== null
+          ? ["checkout", localBranchForRemote]
+          : remoteExists
             ? ["checkout", "--track", input.refName]
-            : remoteExists && localTrackingBranch
-              ? ["checkout", localTrackingBranch]
-              : ["checkout", input.refName];
+            : ["checkout", input.refName];
 
       yield* refuseOptionLikeRefName("GitVcsDriver.switchRef", input.cwd, checkoutArgs.at(-1));
 
@@ -4348,6 +4375,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           fallbackErrorDetail: "git checkout failed",
         },
       );
+
+      if (localBranchForRemote !== null) {
+        yield* fastForwardToRemoteRef(input.cwd, localBranchForRemote, input.refName);
+      }
 
       const refName = yield* runGitStdout("GitVcsDriver.switchRef.currentBranch", input.cwd, [
         "branch",

@@ -343,6 +343,74 @@ describe("GitGraphService", () => {
     ),
   );
 
+  it.live(
+    "checks out an existing local branch instead of failing on a remote of the same name",
+    () =>
+      withRepo(({ repo, root, git }) =>
+        Effect.gen(function* () {
+          const graph = yield* GitGraphService;
+          const remote = yield* Effect.sync(() => `${root}/remote.git`);
+          yield* git(["init", "-q", "--bare", "-b", "main", remote]);
+          yield* git(["remote", "add", "origin", remote]);
+          yield* git(["push", "-q", "origin", "main"]);
+          // The remote moves on after this clone cut `staging` from main.
+          yield* git(["branch", "staging", "main"]);
+          yield* git(["push", "-q", "origin", "staging"]);
+          yield* git(["switch", "-q", "-c", "author", "main"]);
+          yield* git(["commit", "-q", "--allow-empty", "-m", "remote work"]);
+          yield* git(["push", "-q", "origin", "author:staging"]);
+          yield* git(["switch", "-q", "main"]);
+          yield* git(["branch", "-D", "author"]);
+          yield* git(["fetch", "-q", "origin"]);
+          const remoteStaging = (yield* git(["rev-parse", "refs/remotes/origin/staging"])).trim();
+
+          const result = yield* graph.action({
+            cwd: repo,
+            action: { _tag: "Checkout", ref: "refs/remotes/origin/staging", localName: "staging" },
+          });
+
+          assert.include(result.output, "Fast-forward");
+          const branch = (yield* graph.worktrees({ cwd: repo })).worktrees[0]!.branch;
+          assert.strictEqual(branch, "staging");
+          assert.strictEqual(
+            (yield* git(["rev-parse", "refs/heads/staging"])).trim(),
+            remoteStaging,
+          );
+          assert.strictEqual(
+            (yield* git(["for-each-ref", "--format=%(upstream)", "refs/heads/staging"])).trim(),
+            "refs/remotes/origin/staging",
+          );
+        }),
+      ),
+  );
+
+  it.live("refuses to check out a remote branch that would drop a local branch's commits", () =>
+    withRepo(({ repo, root, git }) =>
+      Effect.gen(function* () {
+        const graph = yield* GitGraphService;
+        yield* git(["init", "-q", "--bare", "-b", "main", `${root}/remote.git`]);
+        yield* git(["remote", "add", "origin", `${root}/remote.git`]);
+        yield* git(["push", "-q", "origin", "main"]);
+        yield* git(["branch", "staging"]);
+        yield* git(["push", "-q", "origin", "staging"]);
+        yield* git(["switch", "-q", "staging"]);
+        yield* git(["commit", "-q", "--allow-empty", "-m", "local only"]);
+        yield* git(["switch", "-q", "main"]);
+        const localStaging = (yield* git(["rev-parse", "refs/heads/staging"])).trim();
+
+        const error = yield* graph
+          .action({
+            cwd: repo,
+            action: { _tag: "Checkout", ref: "refs/remotes/origin/staging", localName: "staging" },
+          })
+          .pipe(Effect.flip);
+
+        assert.include(error.message, "Merge or rebase it first");
+        assert.strictEqual((yield* git(["rev-parse", "refs/heads/staging"])).trim(), localStaging);
+      }),
+    ),
+  );
+
   it.live("merges a branch into the current branch with a merge commit", () =>
     withRepo(({ repo, git }) =>
       Effect.gen(function* () {

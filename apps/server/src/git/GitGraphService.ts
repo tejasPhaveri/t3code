@@ -1127,6 +1127,54 @@ export const make = Effect.gen(function* () {
       "refs/remotes",
     ]).pipe(Effect.map((out) => parseGitGraphRefs(out).find((ref) => ref.fullName === fullName)));
 
+  /** Lands on an existing local branch and advances it to its remote, refusing to lose commits. */
+  const fastForwardLocalBranch = Effect.fn("GitGraphService.fastForwardLocalBranch")(function* (
+    cwd: string,
+    branch: GitGraphRef,
+    upstreamFullName: string,
+  ) {
+    const upstreamName = upstreamFullName.replace(/^refs\/remotes\//, "");
+    const isAncestor =
+      (yield* run(
+        "checkout.isAncestor",
+        cwd,
+        ["merge-base", "--is-ancestor", branch.fullName, upstreamFullName],
+        { allowNonZeroExit: true },
+      )).exitCode === 0;
+    if (!isAncestor) {
+      return yield* new GitCommandError({
+        operation: "GitGraphService.checkout",
+        command: "git merge-base",
+        cwd,
+        detail: `${branch.name} has commits that ${upstreamName} does not. Merge or rebase it first.`,
+      });
+    }
+    const switched = yield* runAction("checkout", cwd, ["switch", "--", branch.name]);
+    const advanced = yield* runAction("checkout.fastForward", cwd, [
+      "merge",
+      "--ff-only",
+      "--end-of-options",
+      upstreamFullName,
+    ]);
+    // A branch that tracked something else, or nothing, starts following what was just checked out.
+    const currentUpstream = (yield* stdoutOf("checkout.upstream", cwd, [
+      "for-each-ref",
+      "--format=%(upstream)",
+      branch.fullName,
+    ])).trim();
+    const tracked =
+      currentUpstream.length > 0
+        ? ""
+        : yield* runAction("checkout.track", cwd, [
+            "branch",
+            "--set-upstream-to",
+            upstreamFullName,
+            "--",
+            branch.name,
+          ]);
+    return [switched, advanced, tracked].filter((line) => line.length > 0).join("\n");
+  });
+
   const resolveActionCwd = Effect.fn("GitGraphService.resolveActionCwd")(function* (
     input: GitGraphActionInput,
   ) {
@@ -1260,6 +1308,12 @@ export const make = Effect.gen(function* () {
           if (ref?.kind === "remote") {
             const localName = act.localName ?? ref.name.slice(ref.name.indexOf("/") + 1);
             yield* assertBranchName(cwd, localName);
+            // A local branch already holds this name, so it is this remote branch's checkout:
+            // land on it and bring it up to date instead of failing with "already exists".
+            const existing = yield* findBranch(cwd, `refs/heads/${localName}`);
+            if (existing) {
+              return { output: yield* fastForwardLocalBranch(cwd, existing, ref.fullName) };
+            }
             return {
               output: yield* runAction("checkout", cwd, [
                 "switch",
