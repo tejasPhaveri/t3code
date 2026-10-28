@@ -1214,7 +1214,8 @@ function ProfileBookmarksSubmenu({
     }),
   );
   const choose = (key: string) => {
-    const { [profileId]: _previous, ...others } = getClientSettings().browserBookmarkSources;
+    const others = { ...getClientSettings().browserBookmarkSources };
+    delete others[profileId];
     const option = options.find((candidate) => candidate.key === key);
     updateSettings({
       browserBookmarkSources: option ? { ...others, [profileId]: option.choice } : others,
@@ -1720,8 +1721,8 @@ function BrowserProfilesSetting({ disabled }: { readonly disabled: boolean }) {
           }
           onRefreshSource={() => refreshImportSource(importSession.source.id)}
           onCheckFullDiskAccess={
-            window.desktopBridge?.checkSystemPermission
-              ? () => window.desktopBridge!.checkSystemPermission!("full-disk-access")
+            window.desktopBridge
+              ? () => window.desktopBridge!.checkSystemPermission("full-disk-access")
               : undefined
           }
           onOpenFullDiskAccessSettings={async () => {

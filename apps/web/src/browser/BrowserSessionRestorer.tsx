@@ -75,6 +75,7 @@ export function BrowserSessionRestorer() {
     (state) => selectThreadRightPanelState(state.byThreadKey, focusedThreadRef).surfaces,
   );
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Saves the live tab scopes into the persisted browser shelf store after hydration
   useEffect(() => {
     if (!hydrated || !useBrowserShelfStore.persist.hasHydrated()) return;
     const panelOrder = panelSurfaces.flatMap((surface) =>
@@ -244,10 +245,12 @@ export function useRestoreBrowserScope(input: {
   const [retryCount, setRetryCount] = useState(0);
   const { threadRef, projectId, enabled } = input;
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Mirrors the focused chat into the store the browser shelf reads across windows
   useEffect(() => {
     if (threadRef) useFocusedBrowserThreadStore.setState({ threadRef });
   }, [threadRef]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Reopens this project saved tabs through the preview commands after hydration
   useEffect(() => {
     if (!enabled || !threadRef || !hydrated || !useBrowserShelfStore.persist.hasHydrated()) return;
     if (retryCount > RESTORE_MAX_RETRIES) return;

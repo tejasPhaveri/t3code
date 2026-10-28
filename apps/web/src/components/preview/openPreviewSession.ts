@@ -12,11 +12,7 @@ import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 
-import {
-  browserDefaultOpenProfileId,
-  browserDefaultOpenViewport,
-  resolveBrowserDefaults,
-} from "~/browser/browserDefaults";
+import { resolveBrowserDefaults } from "~/browser/browserDefaults";
 import { BrowserSettingsReadError } from "~/browser/openFileInPreview";
 import { previewOpenScope } from "~/browser/browserScope";
 import { previewRuntimeFor } from "~/browser/previewRuntime";
@@ -59,8 +55,8 @@ export async function openPreviewSession<E>(
       ...(input.title === undefined ? {} : { title: input.title }),
       ...(input.lazy ? { lazy: true } : {}),
       ...(input.zoomFactor === undefined ? {} : { zoomFactor: input.zoomFactor }),
-      viewport: input.viewport ?? browserDefaultOpenViewport(defaults),
-      profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
+      viewport: input.viewport ?? defaults.viewport,
+      profileId: input.profileId ?? defaults.profileId,
       ...previewOpenScope({
         persistence: input.persistence ?? defaults.persistence,
         threadRef: input.threadRef,

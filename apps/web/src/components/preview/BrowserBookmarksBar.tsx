@@ -12,7 +12,7 @@ import {
   MenuSubTrigger,
   MenuTrigger,
 } from "~/components/ui/menu";
-import { faviconUrlForOrigin } from "~/lib/favicon";
+import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
 
 import { FaviconImage } from "./PreviewFaviconIcon";
 

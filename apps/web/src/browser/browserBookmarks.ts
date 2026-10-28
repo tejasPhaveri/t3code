@@ -30,6 +30,7 @@ export function useBrowserBookmarks(
     key: string;
     bookmarks: readonly BrowserBookmark[];
   } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Reads this computer bookmarks through the desktop bridge, which lives outside React
   useEffect(() => {
     const read = previewBridge?.readBrowserBookmarks;
     if (!source || !read) return;
@@ -55,6 +56,7 @@ export function useBrowserBookmarks(
 /** Browsers on this computer whose bookmarks a profile can show; loaded when asked for. */
 export function useBrowserBookmarkSources(enabled: boolean): readonly BrowserImportSource[] | null {
   const [sources, setSources] = useState<readonly BrowserImportSource[] | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Lists this computer browsers through the desktop bridge, which lives outside React
   useEffect(() => {
     const list = previewBridge?.listBrowserBookmarkSources;
     if (!enabled || !list) return;

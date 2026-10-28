@@ -68,6 +68,7 @@ export function PanelWindowRouteSync() {
     });
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Keeps the panel window following the main window chat through a BroadcastChannel
   useEffect(() => {
     if (!active || typeof BroadcastChannel === "undefined") return;
     const channel = new BroadcastChannel(PANEL_WINDOW_ROUTE_CHANNEL);
@@ -87,6 +88,7 @@ export function PanelWindowRouteSync() {
     };
   }, [active, router]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Tells the other window which chat this one shows over the BroadcastChannel
   useEffect(() => {
     if (active) announceChat();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Each chat this window switches to is announced once.

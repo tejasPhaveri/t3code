@@ -3,12 +3,10 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode } from "react";
 import { cn } from "~/lib/utils";
-import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import {
   animateSidebarLayoutChanges,
   sidebarMarkerId,
   type SidebarListMarker,
-  type SidebarProjectHeaderMarker,
 } from "../Sidebar.logic";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
@@ -32,10 +30,7 @@ function SortableSidebarMarker(props: {
       className={cn("list-none", props.className)}
       style={{
         transform: CSS.Translate.toString(transform),
-        transition:
-          props.marker === "active-placeholder" || props.marker === "settled-placeholder"
-            ? "none"
-            : transition,
+        transition: props.marker.endsWith("-placeholder") ? "none" : transition,
         visibility: transform?.scaleY === 0 ? "hidden" : undefined,
       }}
     >
@@ -133,6 +128,9 @@ export function SidebarSectionHeader(props: {
         <SidebarThreadUndoNotice className="absolute inset-x-0 bottom-full bg-sidebar surface-grain" />
       ) : null}
       <CollapsibleSectionHeader
+        role="treeitem"
+        tabIndex={-1}
+        data-sidebar-row={`shelf:${shelf}`}
         onClick={props.toggle.onToggle}
         expanded={props.toggle.expanded}
         tone={props.isDropTarget ? "accent" : props.dragging ? "emphasized" : "muted"}
@@ -140,38 +138,6 @@ export function SidebarSectionHeader(props: {
         accessory={<span className="font-normal tabular-nums">{props.count}</span>}
       >
         {props.label}
-      </CollapsibleSectionHeader>
-    </SortableSidebarMarker>
-  );
-}
-
-export function SidebarProjectGroupHeader(props: {
-  marker: SidebarProjectHeaderMarker;
-  project: ProjectFaviconProject | null;
-  label: string;
-  threadCount: number;
-  tintClassName: string | null;
-  toggle: { expanded: boolean; onToggle: () => void };
-}) {
-  return (
-    <SortableSidebarMarker
-      marker={props.marker}
-      data-testid="sidebar-project-header"
-      className={cn("mx-0.5 h-8 rounded-md", props.tintClassName)}
-    >
-      <CollapsibleSectionHeader
-        onClick={props.toggle.onToggle}
-        expanded={props.toggle.expanded}
-        title={props.label}
-      >
-        {/* The header keeps its label unshrunk, so bound long names here. */}
-        <span className="flex max-w-48 items-center gap-1.5">
-          {props.project ? (
-            <ProjectFavicon project={props.project} className="size-3.5 shrink-0" />
-          ) : null}
-          <span className="truncate">{props.label}</span>
-          {props.toggle.expanded ? null : <span className="shrink-0">({props.threadCount})</span>}
-        </span>
       </CollapsibleSectionHeader>
     </SortableSidebarMarker>
   );

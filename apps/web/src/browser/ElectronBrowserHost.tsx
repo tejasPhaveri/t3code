@@ -162,6 +162,7 @@ export function ElectronBrowserHost() {
     .map((session) => session.runtimeTabId)
     .join("\0");
   // Runs before the moved webviews' cleanups release them, so the other window keeps the page.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Hands a tab webview to the other window before this host cleanup releases it
   useLayoutEffect(() => {
     for (const runtimeTabId of hostedElsewhereKey.split("\0")) {
       if (runtimeTabId.length > 0) handOffDesktopTab(runtimeTabId);

@@ -209,6 +209,7 @@ export function GitGraphPanel(props: {
   });
   const runAction = useGitGraphAction({ environmentId, cwd, onSettled: refreshAll });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Refreshes the graph on a timer while the panel is visible
   useEffect(() => {
     if (!visible) return;
     const refreshIfShown = () => {
@@ -222,6 +223,7 @@ export function GitGraphPanel(props: {
     };
   }, [refreshAll, visible]);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observes the scroller height so the graph rows can size to it
   useEffect(() => {
     const element = scrollerRef.current;
     if (!element) return;
@@ -711,6 +713,7 @@ export function GitGraphPanel(props: {
   };
 
   // Git Graph's keyboard shortcuts: find, jump to HEAD, refresh, and stash navigation.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Binds window-level keydown listeners while the panel is visible
   useEffect(() => {
     if (!visible) return;
     const onKeyDown = (event: KeyboardEvent) => {

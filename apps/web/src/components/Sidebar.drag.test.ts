@@ -10,7 +10,6 @@ import {
   resolveSidebarDropTarget,
   sidebarListItemId,
   sidebarMarkerId,
-  sidebarProjectHeaderMarker,
   type SidebarListItem,
   type SidebarListMarker,
   type SidebarSection,
@@ -285,32 +284,6 @@ describe("sidebar drag projection", () => {
     }
     const lastIndex = items.length - 1;
     expect(strategy({ ...args, index: lastIndex })).toEqual(stationary);
-  });
-
-  it("previews an active row inside its own project group", () => {
-    const projectHeader = (group: string) => marker(sidebarProjectHeaderMarker(group));
-    const row = (key: string, group: string): SidebarListItem => ({
-      kind: "thread",
-      key,
-      section: "active",
-      group,
-    });
-    const items = [
-      pinnedHeader,
-      divider,
-      projectHeader("x"),
-      row("x1", "x"),
-      row("x2", "x"),
-      projectHeader("w"),
-      row("w1", "w"),
-      settledHeader,
-    ];
-    const result = preview({ items, settledOrder: [], settledExpanded: true }, "x1", "w1");
-    expect(result.get(sidebarMarkerId(sidebarProjectHeaderMarker("x")))).toEqual(stationary);
-    expect(result.get("x2")?.y).toBe(-83);
-    expect(result.get("x1")).toEqual(stationary);
-    expect(result.get(sidebarMarkerId(sidebarProjectHeaderMarker("w")))).toEqual(stationary);
-    expect(result.get("w1")).toEqual(stationary);
   });
 
   const pinned = [

@@ -1,12 +1,9 @@
 import { closestCenter, type CollisionDetection, type Modifier } from "@dnd-kit/core";
 import { verticalListSortingStrategy, type SortingStrategy } from "@dnd-kit/sortable";
 import {
-  arrangeSidebarProjectBlocks,
   resolveSidebarDropTarget,
   sidebarListItemId,
   sidebarMarkerId,
-  sidebarProjectHeaderGroup,
-  sidebarProjectHeaderMarker,
   type SidebarListItem,
   type SidebarListMarker,
   type SidebarSection,
@@ -158,15 +155,6 @@ export function createSidebarSortingStrategy(input: {
       (item) => (ranks.get(item.key) ?? Number.POSITIVE_INFINITY) > rank,
     );
     group.splice(index < 0 ? group.length : index, 0, { ...active, section: target.section });
-    // Active rows are shown in project blocks, so the slot found among their
-    // flat ranks only fixes the dragged row's place inside its own block.
-    if (target.section === "active") {
-      groups.active = group.toSorted(
-        (left, right) =>
-          (ranks.get(left.key) ?? Number.POSITIVE_INFINITY) -
-          (ranks.get(right.key) ?? Number.POSITIVE_INFINITY),
-      );
-    }
     const settledOrder = (
       input.settledOrder.length > 0 ? input.settledOrder : groups.settled.map((item) => item.key)
     ).filter((key) => key !== active.key || target.section === "settled");
@@ -184,25 +172,10 @@ export function createSidebarSortingStrategy(input: {
       if (groups[name].length > 0) projected.push(...groups[name]);
       else marker(`${name}-placeholder`);
     };
-    const headerGroups = items.flatMap((item) => {
-      const headerGroup = item.kind === "marker" ? sidebarProjectHeaderGroup(item.marker) : null;
-      return headerGroup === null ? [] : [headerGroup];
-    });
-    const headerGroupSet = new Set(headerGroups);
     marker("pinned-header");
     projected.push(...groups.pinned);
     marker("pinned-divider");
-    if (groups.active.length === 0) marker("active-placeholder");
-    for (const block of arrangeSidebarProjectBlocks(
-      headerGroups,
-      groups.active,
-      (row) => row.group,
-    )) {
-      if (block.group !== undefined && headerGroupSet.has(block.group)) {
-        marker(sidebarProjectHeaderMarker(block.group));
-      }
-      projected.push(...block.rows);
-    }
+    section("active");
     if (items.some((item) => item.kind === "marker" && item.marker === "working-header")) {
       marker("working-header");
       projected.push(...groups.working);
@@ -229,8 +202,7 @@ export function createSidebarSortingStrategy(input: {
       return item.kind === "marker" &&
         (item.marker === "pinned-header" || item.marker === "pinned-divider")
         ? labelHeight
-        : item.kind === "marker" &&
-            (item.marker === "active-placeholder" || item.marker === "settled-placeholder")
+        : item.kind === "marker" && item.marker.endsWith("placeholder")
           ? slimHeight
           : moved
             ? fallback

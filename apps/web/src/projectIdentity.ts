@@ -1,4 +1,3 @@
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { PROJECT_ICON_COLORS } from "./projectIconColors";
 import type { ProjectIconColor } from "@t3tools/contracts";
 
@@ -39,14 +38,4 @@ export function deriveProjectIdentity(projectName: string): ProjectIdentity {
     monogram: projectMonogram(projectName),
     color: projectColor(projectName),
   };
-}
-
-/** The project's icon color, or the one its monogram would get, so the sidebar tint matches the icon. */
-export function projectAccentColor(
-  project: Pick<EnvironmentProject, "title" | "projectIcon">,
-): ProjectIconColor {
-  const icon = project.projectIcon;
-  return icon?.kind === "monogram" || icon?.kind === "lucide"
-    ? icon.color
-    : projectColor(project.title);
 }

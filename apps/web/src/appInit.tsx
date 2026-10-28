@@ -25,7 +25,11 @@ import { isElectron } from "./env";
 import { isPanelWindow } from "./panelWindow";
 import { installPanelWindowAnnotationForwarding } from "./panelWindowAnnotations";
 import { installCrossWindowStoreSync } from "./crossWindowStores";
-import { subscribeDraftThreadPromotion, useComposerDraftStore } from "./composerDraftStore";
+import {
+  subscribeComposerDraftModelReconciliation,
+  subscribeDraftThreadPromotion,
+  useComposerDraftStore,
+} from "./composerDraftStore";
 import { startDefaultThemeAdoption } from "./hooks/useDefaultTheme";
 import { startEnvironmentThemeRepaint } from "./hooks/useEnvironmentTheme";
 import {
@@ -44,7 +48,9 @@ import { startProviderAuthDelivery } from "./providerAuthDelivery";
 import { getRouter, type AppRouter } from "./router";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 import { primaryServerConfigAtom } from "./state/server";
+import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
+import { startWorkspaceFocus } from "./lib/workspaceFocus";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
 import { environmentThreadShells } from "./state/threads";
@@ -182,7 +188,14 @@ export function startAppServices(): AppRouter {
     threadShellAtom: environmentThreadShells.quietThreadShellAtom,
     threadRefsAtom: environmentThreadShells.threadRefsAtom,
   });
+  subscribeComposerDraftModelReconciliation({
+    registry: appAtomRegistry,
+    threadShellAtom: environmentThreadShells.threadShellAtom,
+    threadRefsAtom: environmentThreadShells.threadRefsAtom,
+    shellStateAtom: environmentShell.stateAtom,
+  });
   startMainAppLocationTracking(router);
+  startWorkspaceFocus(router);
 
   // The right panel's own window loads this app too; once-per-app work stays in the main window.
   if (!isPanelWindow) {
