@@ -418,9 +418,9 @@ function useSidebarThreads(input: {
     folderGroups,
     keepEmptyFolders: keepEmpty,
   } = input;
-  // Folders already separate the work, so boring mode has no Working shelf.
-  const workingShelfEnabled =
-    useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null;
+  // Folders group the active list; the Working section still folds the threads you are waiting on,
+  // so boring mode takes those out of their folders rather than dropping the shelf.
+  const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
   const inboxReturnsVersion = useSyncExternalStore(
     inboxReturns.subscribe,
     inboxReturns.getSnapshot,
