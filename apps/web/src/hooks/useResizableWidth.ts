@@ -1,7 +1,15 @@
 import * as Schema from "effect/Schema";
-import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useLayoutEffect,
+  useSyncExternalStore,
+} from "react";
 
-import { getLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
+import {
+  getLocalStorageItem,
+  removeLocalStorageItem,
+  setLocalStorageItem,
+} from "./useLocalStorage";
 import { useResizeDrag } from "./useResizeDrag";
 
 const WidthSchema = Schema.Finite;
@@ -26,6 +34,54 @@ export interface ResizableWidthHandlers {
   readonly onLostPointerCapture: (event: ReactPointerEvent<HTMLElement>) => void;
 }
 
+// Null until dragged, so the default keeps following bounds measured after mount.
+const savedWidths = new Map<string, number | null>();
+const widthListeners = new Map<string, Set<() => void>>();
+
+function readSavedWidth(storageKey: string): number | null {
+  const cached = savedWidths.get(storageKey);
+  if (cached !== undefined) return cached;
+  let width: number | null = null;
+  try {
+    width = getLocalStorageItem(storageKey, WidthSchema) ?? null;
+  } catch (error) {
+    console.error("Could not read persisted panel width.", error);
+  }
+  savedWidths.set(storageKey, width);
+  return width;
+}
+
+function subscribeSavedWidth(storageKey: string, listener: () => void): () => void {
+  const listeners = widthListeners.get(storageKey) ?? new Set();
+  widthListeners.set(storageKey, listeners);
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) widthListeners.delete(storageKey);
+  };
+}
+
+/** Saves a panel's width, or null for its default, and resizes every panel using that key. */
+export function setResizableWidth(storageKey: string, width: number | null): void {
+  savedWidths.set(storageKey, width);
+  try {
+    if (width === null) removeLocalStorageItem(storageKey);
+    else setLocalStorageItem(storageKey, width, WidthSchema);
+  } catch (error) {
+    console.error("Could not persist panel width.", error);
+  }
+  for (const listener of widthListeners.get(storageKey) ?? []) listener();
+}
+
+/** The width saved under a key, or null while the panel keeps its default. */
+export function useSavedResizableWidth(storageKey: string): number | null {
+  return useSyncExternalStore(
+    (listener) => subscribeSavedWidth(storageKey, listener),
+    () => readSavedWidth(storageKey),
+    () => null,
+  );
+}
+
 /** Persist on drag end to avoid a storage write on every animation frame. */
 export function useResizableWidth(options: UseResizableWidthOptions): {
   readonly width: number;
@@ -38,25 +94,8 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
     return Math.max(minWidth, Math.min(maxWidth, value));
   };
 
-  // Null until dragged, so the default keeps following bounds measured after mount.
-  const readWidth = (): number | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      return getLocalStorageItem(storageKey, WidthSchema) ?? null;
-    } catch (error) {
-      console.error("Could not read persisted panel width.", error);
-      return null;
-    }
-  };
-  const [widthState, setWidthState] = useState<{
-    readonly storageKey: string;
-    readonly width: number | null;
-  }>(() => ({ storageKey, width: readWidth() }));
-  if (widthState.storageKey !== storageKey) {
-    setWidthState({ storageKey, width: readWidth() });
-  }
-
-  const clampedWidth = clamp(widthState.width ?? defaultWidth);
+  const savedWidth = useSavedResizableWidth(storageKey);
+  const clampedWidth = clamp(savedWidth ?? defaultWidth);
 
   const drag = useResizeDrag<HTMLElement>((event) => {
     const host = event.currentTarget.parentElement;
@@ -75,12 +114,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
         return nextWidth;
       },
       finish(finalWidth) {
-        setWidthState({ storageKey: startStorageKey, width: finalWidth });
-        try {
-          setLocalStorageItem(startStorageKey, finalWidth, WidthSchema);
-        } catch (error) {
-          console.error("Could not persist panel width.", error);
-        }
+        setResizableWidth(startStorageKey, finalWidth);
       },
       cleanup(committed) {
         host?.style.removeProperty("transition-property");
