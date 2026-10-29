@@ -604,6 +604,20 @@ export const OrchestrationV2RunStatus = Schema.Literals([
 ]);
 export type OrchestrationV2RunStatus = typeof OrchestrationV2RunStatus.Type;
 
+/**
+ * A run whose history settled. `waiting` counts: its provider turn already ended and only
+ * checkpoint capture is left. A fork of anything else would copy a turn still being written.
+ */
+export function isForkableSourceRunStatus(status: OrchestrationV2RunStatus): boolean {
+  return (
+    status === "completed" ||
+    status === "waiting" ||
+    status === "failed" ||
+    status === "interrupted" ||
+    status === "cancelled"
+  );
+}
+
 export const OrchestrationV2DelegatedCompletionTaskDeliveryState = Schema.Literals([
   "pending",
   "claimed",

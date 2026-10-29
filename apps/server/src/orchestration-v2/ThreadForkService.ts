@@ -1,5 +1,6 @@
 import {
   ContextTransferId,
+  isForkableSourceRunStatus,
   OrchestrationV2Actor,
   OrchestrationV2AppThread,
   OrchestrationV2ContextSourcePoint,
@@ -32,15 +33,7 @@ export class ThreadForkPlanError extends Schema.TaggedError<ThreadForkPlanError>
 ) {}
 
 /** waiting means provider-finished with checkpoint capture pending. */
-export function isForkableSourceRunStatus(status: OrchestrationV2Run["status"]): boolean {
-  return (
-    status === "completed" ||
-    status === "waiting" ||
-    status === "failed" ||
-    status === "interrupted" ||
-    status === "cancelled"
-  );
-}
+export { isForkableSourceRunStatus } from "@t3tools/contracts";
 
 export function forkableSourceRunStatusError(
   run: Pick<OrchestrationV2Run, "id" | "status">,

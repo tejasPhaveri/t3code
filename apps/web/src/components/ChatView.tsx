@@ -3207,7 +3207,7 @@ export default function ChatView(props: ChatViewProps) {
   const sideChat = useSideChat({
     threadRef: isServerThread && !embedded && canOperateThread ? activeThreadRef : null,
     title: activeThread?.title,
-    source: latestSideChatSource(serverVisibleTurnItems),
+    source: latestSideChatSource(serverVisibleTurnItems, serverProjection?.runs ?? []),
     onError: (message) => {
       if (activeThread) setThreadError(activeThread.id, message);
     },

@@ -1,8 +1,11 @@
 import {
   type ChatAttachment,
   isCompactionCommandMessage,
+  isForkableSourceRunStatus,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ProviderCapabilities,
+  type OrchestrationV2RunStatus,
+  type RunId,
 } from "@t3tools/contracts";
 import { copySorted } from "@t3tools/shared/Array";
 
@@ -181,9 +184,20 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
 export function canForkProjectedAssistantItem(input: {
   readonly projectedItem: OrchestrationV2ProjectedTurnItem;
   readonly capabilities?: OrchestrationV2ProviderCapabilities | undefined;
+  /**
+   * The thread's runs. A turn writes finished assistant messages while it works, so a completed
+   * message does not prove its run settled; the server refuses to fork a running one.
+   */
+  readonly runs?: ReadonlyArray<{ readonly id: RunId; readonly status: OrchestrationV2RunStatus }>;
 }): boolean {
   const item = input.projectedItem.item;
   if (item.type !== "assistant_message" || item.runId === null || item.status !== "completed") {
+    return false;
+  }
+  if (
+    input.runs !== undefined &&
+    !input.runs.some((run) => run.id === item.runId && isForkableSourceRunStatus(run.status))
+  ) {
     return false;
   }
   if (input.capabilities === undefined) {

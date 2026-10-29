@@ -1,11 +1,13 @@
 import type {
   ModelSelection,
+  OrchestrationV2Run,
   ProviderInteractionMode,
   RunId,
   RuntimeMode,
   ScopedThreadRef,
   ThreadId,
 } from "@t3tools/contracts";
+import { isForkableSourceRunStatus } from "@t3tools/contracts";
 import type { ThreadStructureVisibleTurnItem } from "@t3tools/client-runtime/state/models";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -28,15 +30,24 @@ export interface SideChatSource {
 }
 
 /**
- * The response a side chat branches from: the last completed assistant message. It carries its
- * own source thread, so a side chat opened on a side chat branches from the right one.
+ * The response a side chat branches from: the last assistant message in a run whose history has
+ * settled. It carries its own source thread, so a side chat opened on a side chat branches from
+ * the right one. A settled assistant message can still belong to a running turn — the server
+ * refuses to fork one of those, so the run's status decides, not the message's.
  */
 export function latestSideChatSource(
   items: ReadonlyArray<ThreadStructureVisibleTurnItem>,
+  runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "status">>,
 ): SideChatSource | null {
+  const settledRuns = new Set(
+    runs.filter((run) => isForkableSourceRunStatus(run.status)).map((run) => run.id),
+  );
   const source = items.findLast(
     ({ item }) =>
-      item.type === "assistant_message" && item.status === "completed" && item.runId !== null,
+      item.type === "assistant_message" &&
+      item.status === "completed" &&
+      item.runId !== null &&
+      settledRuns.has(item.runId),
   );
   if (!source || source.item.type !== "assistant_message" || source.item.runId === null)
     return null;

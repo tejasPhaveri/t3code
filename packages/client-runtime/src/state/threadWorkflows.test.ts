@@ -374,6 +374,23 @@ describe("thread workflows", () => {
     ).toBe(false);
   });
 
+  it("hides the fork action for a finished message whose run is still streaming", () => {
+    // A turn writes completed assistant messages as it works; forking one hit
+    // "Fork source run ... is running; in-progress and rolled-back runs cannot be forked."
+    const projectedItem = {
+      item: { type: "assistant_message", runId: "run", status: "completed" },
+    } as never;
+    const settled = [{ id: "run", status: "completed" as const }];
+
+    expect(canForkProjectedAssistantItem({ projectedItem, runs: settled })).toBe(true);
+    expect(
+      canForkProjectedAssistantItem({ projectedItem, runs: [{ id: "other", status: "waiting" }] }),
+    ).toBe(false);
+    expect(
+      canForkProjectedAssistantItem({ projectedItem, runs: [{ id: "run", status: "running" }] }),
+    ).toBe(false);
+  });
+
   it("merges the newest provider-finished run while checkpoint capture is pending", () => {
     const projection = {
       runs: [
