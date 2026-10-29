@@ -55,6 +55,79 @@ const forkCases = (
   return { driver, status, instanceId, modelSelection, layer };
 });
 
+it.effect("a side chat fork persists its lineage flag for clients that hide it", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const eventSink = yield* EventSink.EventSinkV2;
+    const now = yield* DateTime.now;
+    const { instanceId, modelSelection } = forkCases[0]!;
+    const sourceThreadId = ThreadId.make("side-chat-source");
+    const targetThreadId = ThreadId.make("side-chat-target");
+    const sourceRunId = RunId.make("side-chat-source-run");
+
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("side-chat-create"),
+      threadId: sourceThreadId,
+      projectId: ProjectId.make("side-chat-project"),
+      title: "Side chat source",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* eventSink.write({
+      events: [
+        {
+          id: EventId.make("side-chat-source-run"),
+          type: "run.created",
+          threadId: sourceThreadId,
+          runId: sourceRunId,
+          occurredAt: now,
+          payload: {
+            id: sourceRunId,
+            threadId: sourceThreadId,
+            ordinal: 1,
+            providerInstanceId: instanceId,
+            modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make("side-chat-source-message"),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "completed",
+            requestedAt: now,
+            startedAt: now,
+            completedAt: now,
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+        },
+      ],
+    });
+
+    yield* orchestrator.dispatch({
+      type: "thread.fork",
+      commandId: CommandId.make("side-chat-fork"),
+      sourceThreadId,
+      targetThreadId,
+      sourcePoint: { type: "run", runId: sourceRunId },
+      sideChat: true,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const shell = yield* orchestrator.getThreadShell(targetThreadId);
+    assert.equal(shell?.lineage.relationshipToParent, "fork");
+    assert.isTrue(shell?.lineage.sideChat);
+
+    // The source stays listed; only the fork the user opened is hidden.
+    const source = yield* orchestrator.getThreadShell(sourceThreadId);
+    assert.notProperty(source?.lineage ?? {}, "sideChat");
+  }).pipe(Effect.provide(forkCases[0]!.layer)),
+);
+
 it.effect("a persisted fork leaves PR watching with its parent until explicitly opted in", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

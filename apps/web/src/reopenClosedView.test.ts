@@ -111,6 +111,27 @@ describe("reopenClosedView", () => {
     ).toBe("browser:new-tab");
   });
 
+  it("reopens a side chat as its own tab", async () => {
+    const sideChatThreadId = "thread-side" as ScopedThreadRef["threadId"];
+    const reopened = await reopenClosedView(
+      {
+        kind: "panel-tab",
+        threadRef,
+        surface: {
+          kind: "side-chat",
+          id: `side-chat:${sideChatThreadId}`,
+          threadId: sideChatThreadId,
+        },
+      },
+      { openPreview: vi.fn(), workspaceAvailable: false },
+    );
+    expect(reopened).toBe(true);
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, threadRef);
+    expect(state.isOpen).toBe(true);
+    expect(state.activeSurfaceId).toBe(`side-chat:${sideChatThreadId}`);
+    expect(state.surfaces).toMatchObject([{ kind: "side-chat", threadId: sideChatThreadId }]);
+  });
+
   it("leaves the panel unchanged when a browser resource fails to reopen", async () => {
     const result = await reopenClosedView(
       { kind: "browser", threadRef, snapshot },

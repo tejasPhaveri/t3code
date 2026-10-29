@@ -11,9 +11,12 @@ import type {
 import { ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { lazy, Suspense } from "react";
+import { ComposerHandleContext } from "../../composerHandleContext";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
 import type { ShortcutMatchContext } from "../../keybindings";
 import { type RightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
+import ChatView from "../ChatView";
+import { BackgroundThreadContext } from "./backgroundThread";
 import {
   PersistentThreadTerminalPanel,
   type PersistentThreadTerminalPanelProps,
@@ -195,6 +198,23 @@ export function RightPanelSurfaceContent(props: {
     }
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
+    case "side-chat":
+      return (
+        // The side chat's own composer must not take the parent's, and its global shortcuts stay
+        // with the parent chat behind it.
+        <BackgroundThreadContext value>
+          <ComposerHandleContext value={null}>
+            <ChatView
+              key={surface.id}
+              environmentId={props.environmentId}
+              threadId={surface.threadId}
+              routeKind="server"
+              reserveTitleBarControlInset={false}
+              embedded
+            />
+          </ComposerHandleContext>
+        </BackgroundThreadContext>
+      );
     case "device":
       return (
         <Suspense fallback={null}>

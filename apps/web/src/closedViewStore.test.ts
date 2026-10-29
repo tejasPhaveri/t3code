@@ -54,6 +54,13 @@ describe("closedViewStore", () => {
       threadRef: refA,
       surface: { kind: "pull-request", id: "pull-request:x", repository: "owner/repo", number: 1 },
     },
+    {
+      // A side chat tab's id names the thread it shows; a mismatch cannot reopen it.
+      id: "bad",
+      kind: "panel-tab",
+      threadRef: refA,
+      surface: { kind: "side-chat", id: "side-chat:one", threadId: ThreadId.make("two") },
+    },
   ])("discards incomplete saved views %j while retaining valid history", async (entry) => {
     const id = useClosedViewStore.getState().remember(diff(refA));
     const { storage, name } = useClosedViewStore.persist.getOptions();
@@ -119,5 +126,19 @@ describe("closedViewStore", () => {
     const saved = JSON.stringify(await storage!.getItem(name!));
     expect(saved).not.toContain("private.example");
     expect(saved).not.toContain("Private page");
+  });
+
+  it("reopens a saved side chat tab", async () => {
+    const sideChatId = ThreadId.make("thread-side-chat");
+    const surface = {
+      kind: "side-chat",
+      id: `side-chat:${sideChatId}`,
+      threadId: sideChatId,
+    } as const;
+    useClosedViewStore.getState().remember({ kind: "panel-tab", threadRef: refA, surface });
+    await useClosedViewStore.persist.rehydrate();
+    expect(useClosedViewStore.getState().entries.map((entry) => entry.kind)).toEqual(["panel-tab"]);
+    const [entry] = useClosedViewStore.getState().entries;
+    expect(entry?.kind === "panel-tab" ? entry.surface : null).toEqual(surface);
   });
 });

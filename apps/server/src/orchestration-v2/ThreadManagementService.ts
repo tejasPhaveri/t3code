@@ -11,6 +11,7 @@ import type {
 import {
   type ChatAttachment,
   CommandId,
+  isListedThreadLineage,
   MessageId,
   OrchestrationV2StopWorkflowError,
   type OrchestrationV2StopWorkflowInput,
@@ -756,7 +757,8 @@ const make = Effect.gen(function* () {
           snapshot.threads
             .filter(
               (thread) =>
-                input.includeSubagents || thread.lineage.relationshipToParent !== "subagent",
+                isListedThreadLineage(thread.lineage) &&
+                (input.includeSubagents || thread.lineage.relationshipToParent !== "subagent"),
             )
             .toSorted(
               (left, right) =>

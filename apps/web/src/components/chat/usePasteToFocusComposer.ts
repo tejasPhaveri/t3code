@@ -10,16 +10,19 @@ import type { ComposerHandleRef } from "../../composerHandleContext";
 /**
  * Paste-to-focus: the resting composer blurs on a click into the timeline, so a paste that
  * follows has no editable target and would be dropped. This sends it to the composer instead.
+ * A background thread stands down, as its shortcuts do, so it cannot claim the chat's pastes.
  */
 export function usePasteToFocusComposer(
   activeThreadId: ThreadId | null,
   composerRef: ComposerHandleRef,
+  background = false,
 ) {
   const pasteAsTextShortcutUntilRef = useRef(0);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches window keydown and paste capture listeners that route stray pastes into the composer
   useEffect(() => {
     const keyHandler = (event: KeyboardEvent) => {
       if (
+        !background &&
         shouldRedirectInputToComposer(event) &&
         isPasteAsTextShortcut(event, isMacPlatform(navigator.platform))
       ) {
@@ -27,7 +30,7 @@ export function usePasteToFocusComposer(
       }
     };
     const handler = (event: ClipboardEvent) => {
-      if (!activeThreadId || isCommandPaletteOpen()) return;
+      if (background || !activeThreadId || isCommandPaletteOpen()) return;
       if (getTerminalFocusOwner() !== null) return;
       if (composerRef.current?.isModelPickerOpen()) return;
       const text = pasteTextToFocusComposer(event);
@@ -50,5 +53,5 @@ export function usePasteToFocusComposer(
       window.removeEventListener("keydown", keyHandler, true);
       window.removeEventListener("paste", handler, true);
     };
-  }, [activeThreadId, composerRef]);
+  }, [activeThreadId, composerRef, background]);
 }
