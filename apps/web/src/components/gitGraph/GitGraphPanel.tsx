@@ -1015,10 +1015,8 @@ export function GitGraphPanel(props: {
           <div className="shrink-0 px-2" style={{ width: graphWidth }}>
             Graph
           </div>
-          <div className="min-w-0 flex-1 px-2">Description</div>
-          <div className="w-36 shrink-0 px-2">Date</div>
+          <div className="min-w-0 flex-1 truncate px-2">Description</div>
           <div className="w-32 shrink-0 px-2">Author</div>
-          <div className="w-20 shrink-0 px-2">Commit</div>
         </div>
         <div
           ref={scrollerRef}

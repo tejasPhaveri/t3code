@@ -1,11 +1,3 @@
-const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
 const DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
   month: "short",
@@ -16,10 +8,6 @@ const DATE_TIME_FORMAT = new Intl.DateTimeFormat(undefined, {
 });
 
 const RELATIVE_FORMAT = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-
-export function formatGitGraphDate(unixSeconds: number): string {
-  return DATE_FORMAT.format(new Date(unixSeconds * 1000));
-}
 
 /** The full timestamp, for a tooltip that has room for seconds. */
 export function formatGitGraphDateTime(unixSeconds: number): string {

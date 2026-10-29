@@ -6,7 +6,7 @@ import type { MouseEvent } from "react";
 import { cn } from "~/lib/utils";
 
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
-import { formatGitGraphDate, gitGraphColor, shortHash } from "./gitGraphFormat";
+import { gitGraphColor } from "./gitGraphFormat";
 import type { GitGraphBranchLabel, GitGraphRowItem } from "./gitGraphRows";
 
 export const ROW_HEIGHT = 24;
@@ -110,16 +110,16 @@ function BranchChip(props: {
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-sm border px-1 text-2xs leading-4",
+        "inline-flex min-w-0 shrink items-center gap-1 rounded-sm border px-1 text-2xs leading-4",
         branch.checkedOut && "font-semibold",
       )}
       style={{ borderColor: props.color }}
       onContextMenu={(event) => props.onContextMenu(event, branch)}
     >
-      <GitBranch className="size-3" style={{ color: props.color }} />
-      {branch.name}
+      <GitBranch className="size-3 shrink-0" style={{ color: props.color }} />
+      <span className="min-w-0 truncate">{branch.name}</span>
       {branch.remotes.map((remote) => (
-        <span key={remote} className="text-muted-foreground italic">
+        <span key={remote} className="shrink-0 text-muted-foreground italic">
           {remote}
         </span>
       ))}
@@ -127,7 +127,7 @@ function BranchChip(props: {
         <button
           type="button"
           aria-label={`Open pull request #${pullRequest.number}`}
-          className="inline-flex items-center gap-0.5 rounded-sm px-0.5 text-info hover:bg-accent"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded-sm px-0.5 text-info hover:bg-accent"
           onClick={(event) => props.onOpenPullRequest(event, pullRequest.url)}
         >
           {pullRequest.isDraft ? (
@@ -142,7 +142,7 @@ function BranchChip(props: {
   );
 }
 
-/** One row: its description with branch and tag labels, then date, author and hash columns. */
+/** One row: its description with branch and tag labels, then the author column. */
 export function GraphRow(props: {
   readonly item: GitGraphRowItem;
   readonly index: number;
@@ -175,9 +175,9 @@ export function GraphRow(props: {
       onContextMenu={props.onContextMenu}
     >
       <div className="shrink-0" style={{ width: props.graphWidth }} />
-      <div className="flex min-w-0 flex-1 items-center gap-1 px-2">
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden px-2">
         {item.kind === "uncommitted" ? (
-          <span className="truncate text-muted-foreground italic">
+          <span className="min-w-0 truncate text-muted-foreground italic">
             Uncommitted Changes ({item.fileCount})
           </span>
         ) : item.kind === "stash" ? (
@@ -185,7 +185,7 @@ export function GraphRow(props: {
             <span className="shrink-0 rounded-sm border border-border px-1 text-2xs leading-4 text-muted-foreground">
               {item.stash.selector}
             </span>
-            <span className="truncate">{item.stash.subject}</span>
+            <span className="min-w-0 truncate">{item.stash.subject}</span>
           </>
         ) : (
           <>
@@ -206,7 +206,7 @@ export function GraphRow(props: {
             {item.tags.map((tag) => (
               <span
                 key={tag.fullName}
-                className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1 text-2xs leading-4"
+                className="inline-flex min-w-0 shrink items-center gap-1 rounded-sm border border-border px-1 text-2xs leading-4"
                 onClick={(event) => {
                   event.stopPropagation();
                   props.onTagClick(tag);
@@ -216,30 +216,16 @@ export function GraphRow(props: {
                   props.onTagContextMenu(event, tag);
                 }}
               >
-                <Tag className="size-3 text-muted-foreground" />
-                {tag.name}
+                <Tag className="size-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">{tag.name}</span>
               </span>
             ))}
-            <span className="truncate">{item.commit.subject}</span>
+            <span className="min-w-0 truncate">{item.commit.subject}</span>
           </>
         )}
       </div>
-      <div className="w-36 shrink-0 truncate px-2 text-muted-foreground">
-        {item.kind === "commit"
-          ? formatGitGraphDate(item.commit.authorTime)
-          : item.kind === "stash"
-            ? formatGitGraphDate(item.stash.authorTime)
-            : ""}
-      </div>
       <div className="w-32 shrink-0 truncate px-2 text-muted-foreground">
         {item.kind === "commit" ? item.commit.author : ""}
-      </div>
-      <div className="w-20 shrink-0 truncate px-2 font-mono text-muted-foreground">
-        {item.kind === "commit"
-          ? shortHash(item.commit.hash)
-          : item.kind === "stash"
-            ? shortHash(item.stash.hash)
-            : "*"}
       </div>
     </div>
   );
