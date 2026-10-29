@@ -203,6 +203,7 @@ vi.mock("../lib/chatThreadActions", async (importOriginal) => ({
 vi.mock("../rightPanelStore", () => ({
   useRightPanelStore: { getState: () => ({ show: () => undefined }) },
 }));
+vi.mock("../providerInstances", () => ({ resolveDefaultProviderModelSelection: () => null }));
 vi.mock("../lib/t3ProjectFileDefaults", () => ({
   readT3ProjectFile: () => testState.projectFileRead,
 }));

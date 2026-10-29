@@ -2,8 +2,8 @@
  * Multi-line and long enough that reading it back in the composer costs more
  * than it helps. A short paste stays inline so it is still visible while writing.
  */
-export const COLLAPSED_PASTE_MIN_LINES = 12;
-export const COLLAPSED_PASTE_MIN_CHARS = 800;
+const COLLAPSED_PASTE_MIN_LINES = 12;
+const COLLAPSED_PASTE_MIN_CHARS = 800;
 
 /** The fence language marking a block as pasted material rather than code. */
 export const PASTED_CONTENT_FENCE_LANGUAGE = "pasted-content";
