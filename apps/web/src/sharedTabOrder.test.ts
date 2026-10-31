@@ -160,4 +160,26 @@ describe("shared tab order", () => {
       "browser:tab_1_new",
     ]);
   });
+
+  it("settles when reopened tabs reuse or swap each other's ids", () => {
+    useSharedTabOrderStore.setState({
+      byProjectKey: { "env:swap": ["browser:tab_a", "browser:tab_b", "browser:tab_same"] },
+    });
+    useSharedTabOrderStore.getState().renameBrowserTabs(
+      new Map([
+        ["tab_a", "tab_b"],
+        ["tab_b", "tab_a"],
+        ["tab_same", "tab_same"],
+      ]),
+    );
+
+    expect(useSharedTabOrderStore.getState().byProjectKey["env:swap"]).toEqual([
+      "browser:tab_b",
+      "browser:tab_a",
+      "browser:tab_same",
+    ]);
+    expect(renameBrowserTabKeys(useSharedTabOrderStore.getState(), new Map([["x", "x"]]))).toBe(
+      useSharedTabOrderStore.getState(),
+    );
+  });
 });

@@ -122,7 +122,7 @@ export function renameBrowserTabKeys(
   let changed = false;
   const rename = (key: string) => {
     const next = renamed.get(key);
-    if (next === undefined) return key;
+    if (next === undefined || next === key) return key;
     changed = true;
     return next;
   };
@@ -250,8 +250,18 @@ export const useSharedTabOrderStore = create<SharedTabOrderStoreState>()(
             : { shownByWindowKey: { ...state.shownByWindowKey, [windowKey]: key } };
         }),
       renameBrowserTabs: (renamedTabIds) => {
+        set((state) => renameBrowserTabKeys(state, renamedTabIds));
+        for (const [from, to] of renamedThisRun) {
+          const next = renamedTabIds.get(to);
+          if (next !== undefined) renamedThisRun.set(from, next);
+        }
         for (const [from, to] of renamedTabIds) renamedThisRun.set(from, to);
-        set((state) => renameBrowserTabKeys(state, renamedThisRun));
+        // Counter ids recycle, so a new id can be another tab's old one. Renaming it again on
+        // every write would swap the pair forever, so only ids no tab took now are renamed.
+        const taken = new Set(renamedThisRun.values());
+        for (const [from, to] of renamedThisRun) {
+          if (from === to || taken.has(from)) renamedThisRun.delete(from);
+        }
       },
     }),
     {

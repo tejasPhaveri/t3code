@@ -41,7 +41,7 @@ import {
 } from "./gitGraphBranches";
 import { buildFindableRows, findMatchingRows, stepMatch } from "./gitGraphFind";
 import { gitGraphColor, shortHash } from "./gitGraphFormat";
-import { GraphRow, GraphWindow, ROW_HEIGHT } from "./GitGraphCanvas";
+import { ColumnResizeHandle, GraphRow, GraphWindow, ROW_HEIGHT } from "./GitGraphCanvas";
 import {
   buildGitGraphRows,
   findChildRow,
@@ -52,10 +52,16 @@ import { GitComparePanel } from "./GitComparePanel";
 import { GitCommitDetailsPanel } from "./GitCommitDetailsPanel";
 import { GitGraphRemotesDialog } from "./GitGraphRemotesDialog";
 import { GitSourceControl } from "./GitSourceControl";
+import {
+  type GitGraphColumn,
+  type GitGraphColumnWidths,
+  useSourceControlLayoutStore,
+} from "./sourceControlLayoutStore";
 import { confirmGitGraphAction, useGitGraphAction } from "./useGitGraphAction";
 
 const OVERSCAN_ROWS = 12;
 const LANE_WIDTH = 14;
+const GRAPH_MIN_WIDTH = LANE_WIDTH + 8;
 const BACKGROUND_REFRESH_MS = 10_000;
 
 type RowMenuAction =
@@ -134,6 +140,7 @@ export function GitGraphPanel(props: {
   const [compareBase, setCompareBase] = useState<string | null>(null);
   const [remotesOpen, setRemotesOpen] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
   const findInputRef = useRef<HTMLInputElement | null>(null);
   const openPrLink = useOpenPrLink(props.threadRef);
 
@@ -232,7 +239,28 @@ export function GitGraphPanel(props: {
     );
   }, []);
 
-  const graphWidth = Math.max(1, Math.min(activeModel?.layout.laneCount ?? 1, 24)) * LANE_WIDTH + 8;
+  const storedColumnWidths = useSourceControlLayoutStore((state) => state.columnWidths);
+  const setColumnWidth = useSourceControlLayoutStore((state) => state.setColumnWidth);
+  // A drag only writes the store when it ends, so it does not hit storage on every move.
+  const [columnDraft, setColumnDraft] = useState<Partial<GitGraphColumnWidths>>({});
+  const columnWidths = { ...storedColumnWidths, ...columnDraft };
+  const fitGraphWidth = Math.max(1, activeModel?.layout.laneCount ?? 1) * LANE_WIDTH + 8;
+  const graphWidth = Math.max(
+    GRAPH_MIN_WIDTH,
+    Math.min(fitGraphWidth, columnWidths.graph ?? fitGraphWidth),
+  );
+  const contentMinWidth = graphWidth + columnWidths.description + columnWidths.author;
+  const columnResizeProps = (column: GitGraphColumn) => ({
+    onResize: (next: number) => setColumnDraft({ [column]: next }),
+    onCommit: (next: number) => {
+      setColumnWidth(column, next);
+      setColumnDraft({});
+    },
+    onReset: () => {
+      setColumnWidth(column, null);
+      setColumnDraft({});
+    },
+  });
   const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
   const end = Math.min(
     activeItems.length,
@@ -1009,19 +1037,49 @@ export function GitGraphPanel(props: {
           </div>
         </div>
         <div
-          className="flex shrink-0 items-center border-b border-border text-muted-foreground"
-          style={{ height: ROW_HEIGHT }}
+          ref={headerRef}
+          className="shrink-0 overflow-hidden border-b border-border text-muted-foreground"
         >
-          <div className="shrink-0 px-2" style={{ width: graphWidth }}>
-            Graph
+          <div
+            className="flex items-center"
+            style={{ height: ROW_HEIGHT, minWidth: contentMinWidth }}
+          >
+            <div className="relative shrink-0 px-2" style={{ width: graphWidth }}>
+              <div className="truncate">Graph</div>
+              <ColumnResizeHandle
+                label="Graph"
+                min={GRAPH_MIN_WIDTH}
+                max={fitGraphWidth}
+                {...columnResizeProps("graph")}
+              />
+            </div>
+            <div className="relative min-w-0 flex-1 px-2">
+              <div className="truncate">Description</div>
+              <ColumnResizeHandle
+                label="Description"
+                min={120}
+                max={2000}
+                {...columnResizeProps("description")}
+              />
+            </div>
+            <div className="relative shrink-0 px-2" style={{ width: columnWidths.author }}>
+              <div className="truncate">Author</div>
+              <ColumnResizeHandle
+                label="Author"
+                min={48}
+                max={400}
+                {...columnResizeProps("author")}
+              />
+            </div>
           </div>
-          <div className="min-w-0 flex-1 truncate px-2">Description</div>
-          <div className="w-32 shrink-0 px-2">Author</div>
         </div>
         <div
           ref={scrollerRef}
           className="relative min-h-0 flex-1 overflow-auto"
-          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+          onScroll={(event) => {
+            setScrollTop(event.currentTarget.scrollTop);
+            if (headerRef.current) headerRef.current.scrollLeft = event.currentTarget.scrollLeft;
+          }}
         >
           {activeLog.error && !activeLog.data ? (
             <div className="p-3 text-destructive">{activeLog.error}</div>
@@ -1040,6 +1098,7 @@ export function GitGraphPanel(props: {
             className="relative"
             style={{
               height: (activeItems.length + (activeLog.data?.hasMore ? 1 : 0)) * ROW_HEIGHT,
+              minWidth: contentMinWidth,
             }}
           >
             {activeItems.slice(start, end).map((item, offset) => {
@@ -1050,6 +1109,7 @@ export function GitGraphPanel(props: {
                   item={item}
                   index={index}
                   graphWidth={graphWidth}
+                  authorWidth={columnWidths.author}
                   color={gitGraphColor(graph!.layout.rows[index]!.color)}
                   selected={item.key === selectedKey}
                   isMatch={findMatchSet.has(index)}

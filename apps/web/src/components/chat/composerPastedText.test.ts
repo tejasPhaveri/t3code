@@ -27,18 +27,18 @@ describe("shouldCollapsePastedText", () => {
     expect(shouldCollapsePastedText(PAGE_CONTEXT_PASTE)).toBe(true);
   });
 
-  it("keeps a short paste inline so it stays readable while writing", () => {
+  it("folds any multi-line paste, since pasted material is not edited", () => {
+    expect(shouldCollapsePastedText("a\nb")).toBe(true);
+    expect(shouldCollapsePastedText("one\ntwo\nthree")).toBe(true);
+  });
+
+  it("keeps a short line inline, even with a trailing newline", () => {
     expect(shouldCollapsePastedText("hi")).toBe(false);
-    expect(shouldCollapsePastedText("a\nb")).toBe(false);
-    expect(shouldCollapsePastedText("one\ntwo\nthree")).toBe(false);
+    expect(shouldCollapsePastedText("fix the header\n")).toBe(false);
   });
 
-  it("keeps one long line inline because it is a sentence, not a dump", () => {
-    expect(shouldCollapsePastedText("x".repeat(900))).toBe(false);
-  });
-
-  it("folds a wide paste even when it has few lines", () => {
-    expect(shouldCollapsePastedText(`${"x".repeat(400)}\n${"y".repeat(400)}`)).toBe(true);
+  it("folds one long line", () => {
+    expect(shouldCollapsePastedText("x".repeat(900))).toBe(true);
   });
 
   it("treats empty text as nothing to fold", () => {

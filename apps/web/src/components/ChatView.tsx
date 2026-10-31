@@ -3223,6 +3223,9 @@ export default function ChatView(props: ChatViewProps) {
     },
   });
   const openSideChatStable = useStableCallback(() => void sideChat.open());
+  const openSubagentsStable = useStableCallback(() => {
+    if (activeThreadRef) useRightPanelStore.getState().open(activeThreadRef, "subagents");
+  });
   const sendSideChatStable = useStableCallback((prompt: string) => void sideChat.open(prompt));
   const { onConfirmRevertStable, onForkFromRunStable, onRevertTimelineTurnStable } =
     useTimelineRewind({
@@ -4054,7 +4057,7 @@ export default function ChatView(props: ChatViewProps) {
                               modelLabel={providerSubagentModelLabel}
                               effortLabel={providerSubagentEffortLabel}
                               status={providerSubagentStatus}
-                              onOpenParent={parentThreadLink?.open ?? null}
+                              onOpenParent={embedded ? null : (parentThreadLink?.open ?? null)}
                             />
                           ) : null}
                           {!composerMounted ? null : (
@@ -4475,6 +4478,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequests={addPullRequestsSurfaceStable}
           onAddDevice={addDeviceSurfaceStable}
           onAddSideChat={openSideChatStable}
+          onAddSubagents={openSubagentsStable}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
           diffAvailable={isServerThread && isGitRepo}
@@ -4483,6 +4487,7 @@ export default function ChatView(props: ChatViewProps) {
           pullRequestsAvailable={pullRequestsSurfaceAvailable}
           deviceAvailable={activeThreadRef !== null}
           sideChatAvailable={sideChat.available}
+          subagentsAvailable={isServerThread}
         >
           {rightPanelContent}
         </ChatRightPanel>

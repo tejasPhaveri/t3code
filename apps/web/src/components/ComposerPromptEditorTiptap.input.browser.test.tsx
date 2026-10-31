@@ -9,6 +9,7 @@ import {
 
 import type { ServerProviderSkill } from "@t3tools/contracts";
 import type { Editor } from "@tiptap/core";
+import { NodeSelection } from "@tiptap/pm/state";
 import { createElement, createRef, useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
@@ -481,21 +482,20 @@ describe("collapsed pasted content", () => {
     await pasteInto(editor, pageContextPaste);
 
     await expect.element(screen.getByText("Pasted content")).toBeInTheDocument();
-    await expect.element(screen.getByText(/\d+ lines/)).toBeInTheDocument();
     // The agent receives the text itself, not a summary.
     expect(serializeEditorDoc(editor.state.doc).value).toContain(pageContextPaste);
   });
 
-  it("shows the folded paste as one truncated line", async () => {
+  it("shows the folded paste as only its label", async () => {
     await using screen = await mountEditor("");
     const { editor } = screen;
     await pasteInto(editor, pageContextPaste);
 
+    await expect.element(screen.getByText("Pasted content")).toBeVisible();
     const code = screen.container.querySelector("pre code");
     if (!(code instanceof HTMLElement)) throw new Error("Pasted block did not render");
-    expect(getComputedStyle(code).whiteSpace).toBe("nowrap");
-    // A single line: the nowrap folds the newlines, so the box is one text row tall.
-    expect(code.getBoundingClientRect().height).toBeLessThan(30);
+    expect(code.checkVisibility()).toBe(false);
+    expect(code.textContent).toBe(pageContextPaste);
   });
 
   it("leaves a short paste inline so it stays readable", async () => {
@@ -516,6 +516,40 @@ describe("collapsed pasted content", () => {
     await expect.element(screen.getByText("Pasted content")).not.toBeInTheDocument();
     expect(serializeEditorDoc(editor.state.doc).value).toContain(pageContextPaste);
     armed = false;
+  });
+
+  it("keeps the pasted text read-only while it can still be removed whole", async () => {
+    await using screen = await mountEditor("");
+    const { editor } = screen;
+    await pasteInto(editor, pageContextPaste);
+
+    let blockPos = -1;
+    editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === "codeBlock") blockPos = pos;
+      return blockPos < 0;
+    });
+    expect(blockPos).toBeGreaterThanOrEqual(0);
+    // The caret lands after the paste, so typing continues the message.
+    expect(editor.state.selection.$from.parent.type.name).toBe("paragraph");
+
+    await act(async () => {
+      editor.commands.insertContentAt(blockPos + 3, "x");
+    });
+    expect(serializeEditorDoc(editor.state.doc).value).toContain(pageContextPaste);
+    expect(serializeEditorDoc(editor.state.doc).value).not.toContain("Paxge");
+
+    const backspace = () =>
+      act(async () => {
+        editor.view.someProp("handleKeyDown", (handle) =>
+          handle(editor.view, new KeyboardEvent("keydown", { key: "Backspace" })),
+        );
+      });
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+    await backspace();
+    expect(editor.state.selection).toBeInstanceOf(NodeSelection);
+    expect(serializeEditorDoc(editor.state.doc).value).toContain(pageContextPaste);
+    await backspace();
+    expect(serializeEditorDoc(editor.state.doc).value).not.toContain("Page Context:");
   });
 
   it("keeps a pasted block expanded while the user types elsewhere", async () => {

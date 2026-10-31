@@ -1,7 +1,7 @@
 import type { GitGraphLayout } from "@t3tools/client-runtime/git-graph/layout";
 import type { GitGraphRef, PullRequestListEntry } from "@t3tools/contracts";
 import { GitBranch, Tag } from "lucide-react";
-import type { MouseEvent } from "react";
+import { useRef, type MouseEvent } from "react";
 
 import { cn } from "~/lib/utils";
 
@@ -90,7 +90,7 @@ export function GraphWindow(props: {
   return (
     <svg
       aria-hidden
-      className="pointer-events-none absolute left-0 overflow-visible"
+      className="pointer-events-none absolute left-0 overflow-hidden"
       style={{ top: start * ROW_HEIGHT, width: props.width, height: (end - start) * ROW_HEIGHT }}
     >
       {paths}
@@ -110,14 +110,14 @@ function BranchChip(props: {
   return (
     <span
       className={cn(
-        "inline-flex min-w-0 shrink items-center gap-1 rounded-sm border px-1 text-2xs leading-4",
+        "inline-flex shrink-0 items-center gap-1 rounded-sm border px-1 text-2xs leading-4 whitespace-nowrap",
         branch.checkedOut && "font-semibold",
       )}
       style={{ borderColor: props.color }}
       onContextMenu={(event) => props.onContextMenu(event, branch)}
     >
       <GitBranch className="size-3 shrink-0" style={{ color: props.color }} />
-      <span className="min-w-0 truncate">{branch.name}</span>
+      <span>{branch.name}</span>
       {branch.remotes.map((remote) => (
         <span key={remote} className="shrink-0 text-muted-foreground italic">
           {remote}
@@ -147,6 +147,7 @@ export function GraphRow(props: {
   readonly item: GitGraphRowItem;
   readonly index: number;
   readonly graphWidth: number;
+  readonly authorWidth: number;
   readonly color: string;
   readonly selected: boolean;
   readonly isMatch: boolean;
@@ -206,7 +207,7 @@ export function GraphRow(props: {
             {item.tags.map((tag) => (
               <span
                 key={tag.fullName}
-                className="inline-flex min-w-0 shrink items-center gap-1 rounded-sm border border-border px-1 text-2xs leading-4"
+                className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1 text-2xs leading-4 whitespace-nowrap"
                 onClick={(event) => {
                   event.stopPropagation();
                   props.onTagClick(tag);
@@ -217,16 +218,67 @@ export function GraphRow(props: {
                 }}
               >
                 <Tag className="size-3 shrink-0 text-muted-foreground" />
-                <span className="truncate">{tag.name}</span>
+                <span>{tag.name}</span>
               </span>
             ))}
             <span className="min-w-0 truncate">{item.commit.subject}</span>
           </>
         )}
       </div>
-      <div className="w-32 shrink-0 truncate px-2 text-muted-foreground">
+      <div
+        className="shrink-0 truncate px-2 text-muted-foreground"
+        style={{ width: props.authorWidth }}
+      >
         {item.kind === "commit" ? item.commit.author : ""}
       </div>
     </div>
+  );
+}
+
+/** Drags a header column's right edge; double-click restores its default. */
+export function ColumnResizeHandle(props: {
+  readonly label: string;
+  readonly min: number;
+  readonly max: number;
+  readonly onResize: (width: number) => void;
+  readonly onCommit: (width: number) => void;
+  readonly onReset: () => void;
+}) {
+  const drag = useRef<{ readonly startX: number; readonly startWidth: number } | null>(null);
+  const widthAt = (clientX: number) => {
+    const start = drag.current!;
+    return Math.round(
+      Math.min(props.max, Math.max(props.min, start.startWidth + clientX - start.startX)),
+    );
+  };
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${props.label} column`}
+      className="absolute top-0 -right-1 bottom-0 z-10 w-2 cursor-col-resize after:absolute after:inset-y-1 after:left-1/2 after:w-px after:bg-border hover:after:bg-foreground/40"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        // The rendered width, since the description column grows past its stored minimum.
+        const column = event.currentTarget.parentElement!;
+        drag.current = { startX: event.clientX, startWidth: column.offsetWidth };
+      }}
+      onPointerMove={(event) => {
+        if (drag.current) props.onResize(widthAt(event.clientX));
+      }}
+      onPointerUp={(event) => {
+        if (!drag.current) return;
+        props.onCommit(widthAt(event.clientX));
+        drag.current = null;
+      }}
+      onPointerCancel={() => {
+        if (!drag.current) return;
+        props.onCommit(drag.current.startWidth);
+        drag.current = null;
+      }}
+      onDoubleClick={props.onReset}
+    />
   );
 }

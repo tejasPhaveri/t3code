@@ -20,6 +20,7 @@ import StarterKit from "@tiptap/starter-kit";
 import { type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { newlineInCode, splitBlockKeepMarks } from "@tiptap/pm/commands";
 import { isHistoryTransaction } from "@tiptap/pm/history";
+import { ReplaceAroundStep, ReplaceStep } from "@tiptap/pm/transform";
 import {
   type EditorState,
   NodeSelection,
@@ -837,6 +838,74 @@ const renderPastedContentNodeView = ReactNodeViewRenderer(ComposerPastedContentN
     event.target.closest(".chat-markdown-codeblock-header") !== null,
 });
 
+function isPastedContentBlock(node: ProseMirrorNode | null | undefined): node is ProseMirrorNode {
+  return (
+    node?.type.name === "codeBlock" &&
+    languageOfInfoString(String(node.attrs.language ?? "")) === PASTED_CONTENT_FENCE_LANGUAGE
+  );
+}
+
+function pastedBlockAround($pos: ResolvedPos): { node: ProseMirrorNode; pos: number } | null {
+  return isPastedContentBlock($pos.parent) ? { node: $pos.parent, pos: $pos.before() } : null;
+}
+
+// A paste is read-only: it can be removed as a whole, but never edited from inside.
+const PastedContentReadOnlyPlugin = new Plugin({
+  key: new PluginKey("composer-pasted-content-read-only"),
+  filterTransaction: (tr) =>
+    !tr.docChanged ||
+    tr.steps.every((step, index) => {
+      if (!(step instanceof ReplaceStep || step instanceof ReplaceAroundStep)) return true;
+      let allowed = true;
+      tr.docs[index]!.descendants((node, pos) => {
+        if (!allowed) return false;
+        if (!isPastedContentBlock(node)) return true;
+        const end = pos + node.nodeSize;
+        const coversBlock = step.from <= pos && step.to >= end;
+        if (!coversBlock && step.from <= end - 1 && step.to >= pos + 1) allowed = false;
+        return false;
+      });
+      return allowed;
+    }),
+  // A caret inside a paste lands after it when content changed (a paste or sync), and
+  // selects it whole when the user navigated or clicked into it.
+  appendTransaction: (transactions, _, state) => {
+    const { selection } = state;
+    if (!(selection instanceof TextSelection)) return null;
+    const block = pastedBlockAround(selection.$from) ?? pastedBlockAround(selection.$to);
+    if (!block || !selection.empty) return null;
+    if (!transactions.some((tr) => tr.docChanged)) {
+      return state.tr.setSelection(NodeSelection.create(state.doc, block.pos));
+    }
+    const end = block.pos + block.node.nodeSize;
+    const tr = state.tr;
+    if (!state.doc.resolve(end).nodeAfter?.isTextblock) {
+      tr.insert(end, state.schema.nodes.paragraph!.create());
+    }
+    return tr.setSelection(TextSelection.create(tr.doc, end + 1));
+  },
+});
+
+/** Backspace or Delete beside a paste selects it first, since it cannot be joined. */
+function selectAdjacentPastedBlock(
+  editor: { state: EditorState; view: EditorView },
+  direction: -1 | 1,
+): boolean {
+  const { selection } = editor.state;
+  if (!(selection instanceof TextSelection) || !selection.empty) return false;
+  const { $from } = selection;
+  if (!$from.parent.isTextblock) return false;
+  if (direction === -1 && $from.parentOffset !== 0) return false;
+  if (direction === 1 && $from.parentOffset !== $from.parent.content.size) return false;
+  const boundary = direction === -1 ? $from.before() : $from.after();
+  const $boundary = editor.state.doc.resolve(boundary);
+  const neighbor = direction === -1 ? $boundary.nodeBefore : $boundary.nodeAfter;
+  if (!isPastedContentBlock(neighbor)) return false;
+  const pos = direction === -1 ? boundary - neighbor.nodeSize : boundary;
+  editor.view.dispatch(editor.state.tr.setSelection(NodeSelection.create(editor.state.doc, pos)));
+  return true;
+}
+
 // Module scope keeps extension identity stable; Tiptap hooks read config through this.
 function createComposerExtensions(richText: boolean) {
   return [
@@ -883,6 +952,20 @@ function createComposerExtensions(richText: boolean) {
             // Tiptap's fence rule allows unserializable lists/quotes; use top-level Enter instead.
             addInputRules() {
               return [];
+            },
+            addProseMirrorPlugins() {
+              return [...(this.parent?.() ?? []), PastedContentReadOnlyPlugin];
+            },
+            addKeyboardShortcuts() {
+              const parent = this.parent?.() ?? {};
+              return {
+                ...parent,
+                Backspace: (props) =>
+                  selectAdjacentPastedBlock(this.editor, -1) ||
+                  (parent.Backspace?.(props) ?? false),
+                Delete: (props) =>
+                  selectAdjacentPastedBlock(this.editor, 1) || (parent.Delete?.(props) ?? false),
+              };
             },
           }),
           composerCodeBlockHighlight({

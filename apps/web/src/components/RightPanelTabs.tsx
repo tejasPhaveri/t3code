@@ -32,6 +32,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Bot,
   FileDiff,
   Files,
   Globe2,
@@ -148,6 +149,8 @@ export interface RightPanelTabsProps {
   onAddDevice: () => void;
   /** Opens a side chat beside this one; the tab keeps the fork for later questions. */
   onAddSideChat: () => void;
+  /** Opens a grid of this thread's subagents, each a live chat. */
+  onAddSubagents: () => void;
   /** Opens the project's Git Graph, shown in every chat of the project. */
   onAddGitGraph?: (() => void) | undefined;
   gitGraphAvailable?: boolean | undefined;
@@ -159,6 +162,7 @@ export interface RightPanelTabsProps {
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
   sideChatAvailable: boolean;
+  subagentsAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   children: ReactNode;
 }
@@ -187,6 +191,7 @@ const SURFACE_DISABLED_REASONS = {
   device: "Devices are only available from a thread.",
   gitGraph: "Git Graph is only available for Git repositories.",
   sideChat: "Side chats need a finished response to branch from.",
+  subagents: "Subagents are only available from a thread.",
 } as const;
 
 // Closed keepMounted popups must stop blocking shortcuts once their exit transition ends.
@@ -213,6 +218,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
   device: "Available from a thread.",
   gitGraph: "Available for Git repositories.",
   sideChat: "Available after a finished response.",
+  subagents: "Available from a thread.",
 } as const;
 
 type TabContextMenuAction =
@@ -345,6 +351,8 @@ function RightPanelEmptyState(props: {
   onAddPullRequests: () => void;
   onAddDevice: () => void;
   onAddSideChat: () => void;
+  /** Opens a grid of this thread's subagents, each a live chat. */
+  onAddSubagents: () => void;
   /** Opens the project's Git Graph, shown in every chat of the project. */
   onAddGitGraph?: (() => void) | undefined;
   gitGraphAvailable?: boolean | undefined;
@@ -356,6 +364,7 @@ function RightPanelEmptyState(props: {
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
   sideChatAvailable: boolean;
+  subagentsAvailable: boolean;
 }) {
   const [highlight, setHighlight] = useState(-1);
 
@@ -433,6 +442,15 @@ function RightPanelEmptyState(props: {
       available: props.sideChatAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.sideChat,
       onClick: props.onAddSideChat,
+    },
+    {
+      label: "Subagents",
+      description: "Watch and chat with every subagent side by side.",
+      icon: Bot,
+      shortcut: "A",
+      available: props.subagentsAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.subagents,
+      onClick: props.onAddSubagents,
     },
   ] as const;
 
@@ -646,6 +664,8 @@ function surfaceTitle(
       return surface.title ?? surface.target?.name ?? "Device";
     case "side-chat":
       return "Side chat";
+    case "subagents":
+      return "Subagents";
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       // Role testing opens one site in many profiles; the profile tells those tabs apart.
@@ -754,6 +774,8 @@ function SurfaceIcon({
       );
     case "side-chat":
       return <MessagesSquare className="size-3 shrink-0" />;
+    case "subagents":
+      return <Bot className="size-3 shrink-0" />;
   }
 }
 
@@ -1198,6 +1220,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.sideChatAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.sideChat,
       onClick: props.onAddSideChat,
+    },
+    {
+      label: "Subagents",
+      icon: Bot,
+      shortcut: "A",
+      available: props.subagentsAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.subagents,
+      onClick: props.onAddSubagents,
     },
   ] as const;
 
@@ -1682,6 +1712,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             deviceAvailable={props.deviceAvailable}
             sideChatAvailable={props.sideChatAvailable}
             onAddSideChat={props.onAddSideChat}
+            subagentsAvailable={props.subagentsAvailable}
+            onAddSubagents={props.onAddSubagents}
             onAddGitGraph={props.onAddGitGraph}
             gitGraphAvailable={props.gitGraphAvailable}
           />

@@ -6,10 +6,29 @@ import { resolveSharedWindowStorage } from "~/lib/storage";
 /** Old entries fall off the start, so deleted worktrees and folders cannot grow it forever. */
 const MAX_ENTRIES = 500;
 
+export interface GitGraphColumnWidths {
+  /** The most the graph column takes; `null` fits every lane. */
+  readonly graph: number | null;
+  /** The least the description takes; it grows into any room left over. */
+  readonly description: number;
+  readonly author: number;
+}
+
+export type GitGraphColumn = keyof GitGraphColumnWidths;
+
+const DEFAULT_GIT_GRAPH_COLUMN_WIDTHS: GitGraphColumnWidths = {
+  graph: null,
+  description: 320,
+  author: 128,
+};
+
 interface SourceControlLayoutStoreState {
   /** Sections and folders the user opened or closed, by worktree path; the rest use defaults. */
   readonly openByKey: Readonly<Record<string, boolean>>;
   readonly setOpen: (key: string, open: boolean) => void;
+  /** Shared by every project, so a width set in one repository holds in the rest. */
+  readonly columnWidths: GitGraphColumnWidths;
+  readonly setColumnWidth: (column: GitGraphColumn, width: number | null) => void;
 }
 
 /**
@@ -29,6 +48,14 @@ export const useSourceControlLayoutStore = create<SourceControlLayoutStoreState>
             ),
           };
         }),
+      columnWidths: DEFAULT_GIT_GRAPH_COLUMN_WIDTHS,
+      setColumnWidth: (column, width) =>
+        set((state) => ({
+          columnWidths: {
+            ...state.columnWidths,
+            [column]: width ?? DEFAULT_GIT_GRAPH_COLUMN_WIDTHS[column],
+          },
+        })),
     }),
     {
       name: "t3code:git-source-control-layout:v1",
@@ -36,7 +63,7 @@ export const useSourceControlLayoutStore = create<SourceControlLayoutStoreState>
       storage: createJSONStorage(() =>
         resolveSharedWindowStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
-      partialize: (state) => ({ openByKey: state.openByKey }),
+      partialize: (state) => ({ openByKey: state.openByKey, columnWidths: state.columnWidths }),
     },
   ),
 );

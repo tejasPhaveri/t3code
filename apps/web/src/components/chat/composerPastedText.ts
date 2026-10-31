@@ -1,9 +1,8 @@
 /**
- * Multi-line and long enough that reading it back in the composer costs more
- * than it helps. A short paste stays inline so it is still visible while writing.
+ * Any multi-line paste, or one long line, is material for the agent rather than
+ * prose being written, so it folds into a read-only block. A short line stays inline.
  */
-const COLLAPSED_PASTE_MIN_LINES = 12;
-const COLLAPSED_PASTE_MIN_CHARS = 800;
+const COLLAPSED_PASTE_MIN_CHARS = 300;
 
 /** The fence language marking a block as pasted material rather than code. */
 export const PASTED_CONTENT_FENCE_LANGUAGE = "pasted-content";
@@ -13,11 +12,7 @@ export function pastedTextLineCount(text: string): number {
 }
 
 export function shouldCollapsePastedText(text: string): boolean {
-  if (pastedTextLineCount(text) < 2) return false;
-  return (
-    pastedTextLineCount(text) >= COLLAPSED_PASTE_MIN_LINES ||
-    text.length >= COLLAPSED_PASTE_MIN_CHARS
-  );
+  return pastedTextLineCount(text.trim()) >= 2 || text.length >= COLLAPSED_PASTE_MIN_CHARS;
 }
 
 /** Longer than any fence run inside the text, so it cannot close the block early. */

@@ -3,15 +3,14 @@ import { NodeViewContent, NodeViewWrapper, type NodeViewProps } from "@tiptap/re
 import { useState } from "react";
 
 import { useRenderedAppearance } from "../../hooks/useTheme";
-import { cn } from "~/lib/utils";
 import { MarkdownCodeBlockFrame } from "./MarkdownCodeBlock";
 import { pastedTextLineCount } from "./composerPastedText";
 
 /**
- * A pasted block opens as a single truncated line, since the dump itself is read
- * by the agent rather than by the person writing the message. The text stays in
+ * A pasted block opens as just its label, since the dump itself is read by the
+ * agent rather than by the person writing the message. The text stays in
  * the document, so the agent still receives all of it, and folding never edits
- * the draft.
+ * the draft. The editor's read-only plugin keeps the text itself from being edited.
  */
 export function ComposerPastedContentNodeView({ node, editor }: NodeViewProps) {
   const resolvedTheme = useRenderedAppearance();
@@ -26,9 +25,7 @@ export function ComposerPastedContentNodeView({ node, editor }: NodeViewProps) {
       language="text"
       fenceTitle={null}
       theme={resolvedTheme}
-      // The frame's wrap rule sets `pre-wrap` on the code, which would defeat the single line.
-      wrapped={expanded}
-      headerProps={{ contentEditable: false }}
+      headerProps={{ contentEditable: false, className: expanded ? undefined : "pb-1.5" }}
       title={
         <button
           type="button"
@@ -44,26 +41,15 @@ export function ComposerPastedContentNodeView({ node, editor }: NodeViewProps) {
             <ChevronRightIcon className="size-3.5 shrink-0 opacity-70" />
           )}
           <span className="shrink-0">Pasted content</span>
-          <span className="truncate opacity-60">{summary}</span>
         </button>
       }
     >
-      <div className="chat-markdown-shiki">
-        <pre
-          className={cn(
-            "max-w-full px-3 pt-1 pb-2",
-            expanded ? "overflow-x-auto" : "overflow-hidden",
-          )}
-        >
-          {/* Tiptap writes `white-space: pre-wrap` inline on the code element, so the collapsed
-              state has to override it there; a class cannot win against that style. */}
+      {/* Folded, the paste is only its label; the text stays in the document for the agent. */}
+      <div className="chat-markdown-shiki" style={expanded ? undefined : { display: "none" }}>
+        <pre className="max-w-full overflow-x-auto px-3 pt-1 pb-2">
           <NodeViewContent<"code">
             as="code"
-            className={cn(
-              "block min-h-[1lh] font-mono text-inherit [overflow-wrap:anywhere]",
-              expanded ? "whitespace-pre-wrap" : "truncate",
-            )}
-            style={expanded ? undefined : { whiteSpace: "nowrap" }}
+            className="block min-h-[1lh] font-mono whitespace-pre-wrap text-inherit [overflow-wrap:anywhere]"
           />
         </pre>
       </div>

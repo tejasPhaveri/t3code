@@ -38,6 +38,9 @@ const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
+const SubagentGridPanel = lazy(() =>
+  import("./SubagentGridPanel").then((module) => ({ default: module.SubagentGridPanel })),
+);
 
 type RightPanelTerminalProps = Omit<
   PersistentThreadTerminalPanelProps,
@@ -198,6 +201,12 @@ export function RightPanelSurfaceContent(props: {
     }
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
+    case "subagents":
+      return (
+        <Suspense fallback={null}>
+          <SubagentGridPanel threadRef={threadRef} />
+        </Suspense>
+      );
     case "side-chat":
       return (
         // The side chat's own composer must not take the parent's, and its global shortcuts stay
