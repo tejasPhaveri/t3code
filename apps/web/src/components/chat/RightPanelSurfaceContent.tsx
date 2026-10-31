@@ -11,8 +11,10 @@ import type {
 import { ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { lazy, Suspense } from "react";
+import SideChatPane from "./SideChatPane";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
 import type { ShortcutMatchContext } from "../../keybindings";
+import type { SideChatParentPanel } from "../../lib/sideChatPane";
 import { type RightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
 import {
   PersistentThreadTerminalPanel,
@@ -90,6 +92,7 @@ export function RightPanelSurfaceContent(props: {
     /** Opens a workspace-relative path in a file tab. */
     readonly onOpenFile: (relativePath: string) => void;
   };
+  readonly sideChatParentPanel: SideChatParentPanel;
 }) {
   const { surface, threadRef, visible } = props;
   if (surface === null) return null;
@@ -201,8 +204,19 @@ export function RightPanelSurfaceContent(props: {
     case "subagents":
       return (
         <Suspense fallback={null}>
-          <SubagentGridPanel threadRef={threadRef} />
+          <SubagentGridPanel threadRef={threadRef} parentPanel={props.sideChatParentPanel} />
         </Suspense>
+      );
+    case "side-chat":
+      // Not lazy: revealing a suspended tiptap editor tears down its view and crashes the composer.
+      return (
+        <SideChatPane
+          key={surface.id}
+          parentRef={threadRef}
+          threadId={surface.threadId}
+          parentPanel={props.sideChatParentPanel}
+          onClose={() => props.onCloseSurface(surface)}
+        />
       );
     case "device":
       return (

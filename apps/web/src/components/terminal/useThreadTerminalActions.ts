@@ -2,7 +2,6 @@ import {
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
   type ScopedThreadRef,
-  type ThreadId,
 } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
@@ -114,14 +113,11 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     return { terminalId, result };
   };
 
-  /**
-   * Ends a session and deletes its history. A failed close falls back to typing `exit`.
-   * `ownerThreadId` names the chat that owns a terminal shared into this one.
-   */
-  const closeTerminalSession = (terminalId: string, ownerThreadId?: ThreadId) => {
-    if (!threadRef || !canWrite()) return;
-    const environmentId = threadRef.environmentId;
-    const threadId = ownerThreadId ?? threadRef.threadId;
+  /** Ends a session and deletes its history. A failed close falls back to typing `exit`. */
+  const closeTerminalSession = (terminalId: string, target = threadRef) => {
+    if (!target || !readEnvironmentScope(target.environmentId, AuthTerminalOperateScope)) return;
+    const environmentId = target.environmentId;
+    const threadId = target.threadId;
     useRememberedTerminalsStore.getState().forget(environmentId, { threadId, terminalId });
     void (async () => {
       const closeResult = await closeTerminalCommand({

@@ -2,6 +2,7 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { Dispatch } from "react";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 import type { selectThreadTerminalUiState } from "../../terminalUiStateStore";
@@ -23,7 +24,11 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { MAX_TERMINALS_PER_GROUP } from "../../types";
-import { type RightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
+import {
+  selectThreadRightPanelState,
+  type RightPanelSurface,
+  useRightPanelStore,
+} from "../../rightPanelStore";
 import { isPreviewSupportedInRuntime } from "../../previewStateStore";
 import { openUrlInPreview } from "../../browser/openFileInPreview";
 import { resolveDiscoveredServerUrl } from "../../browser/browserTargetResolver";
@@ -190,7 +195,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
   const createNewTerminalStable = useStableCallback(createNewTerminal);
   const closeTerminal = (terminalId: string) => {
     if (!hasTerminalWriteAccess() || !activeThreadRef) return;
-    terminalActions.closeTerminalSession(terminalId);
+    terminalActions.closeTerminalSession(terminalId, activeThreadRef);
     storeCloseTerminal(activeThreadRef, terminalId);
     focusActiveDrawerTerminal(activeThreadRef);
   };
@@ -361,26 +366,25 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     focusTerminal(activeThreadRef, terminalId);
   };
   const activatePanelTerminalStable = useStableCallback(activatePanelTerminal);
-  const closePanelTerminal = (terminalId: string) => {
-    if (
-      !hasTerminalWriteAccess() ||
-      !activeThreadRef ||
-      activeRightPanelSurface?.kind !== "terminal"
-    )
-      return;
-    const ownerThreadId = activeRightPanelSurface.ownerThreadId;
-    if (ownerThreadId === undefined) {
-      terminalActions.closeTerminalSession(terminalId);
-      storeCloseTerminal(activeThreadRef, terminalId);
+  const closePanelTerminal = (terminalId: string, target = activeThreadRef) => {
+    if (!target || !readEnvironmentScope(target.environmentId, AuthTerminalOperateScope)) return;
+    const store = useRightPanelStore.getState();
+    const surface = selectThreadRightPanelState(store.byThreadKey, target).surfaces.find(
+      (entry) => entry.kind === "terminal" && entry.terminalIds.includes(terminalId),
+    );
+    if (surface?.kind !== "terminal") return;
+    // A shared terminal belongs to another chat; this chat's own ids may repeat it.
+    if (surface.ownerThreadId === undefined) {
+      terminalActions.closeTerminalSession(terminalId, target);
+      storeCloseTerminal(target, terminalId);
     } else {
-      terminalActions.closeTerminalSession(terminalId, ThreadId.make(ownerThreadId));
+      terminalActions.closeTerminalSession(
+        terminalId,
+        scopeThreadRef(target.environmentId, ThreadId.make(surface.ownerThreadId)),
+      );
     }
-    useRightPanelStore
-      .getState()
-      .closeTerminal(activeThreadRef, activeRightPanelSurface.id, terminalId);
-    // Closing a surface's last terminal falls back to a neighbouring surface,
-    // which can be another terminal surface.
-    focusActivePanelTerminal(activeThreadRef);
+    store.closeTerminal(target, surface.id, terminalId);
+    focusActivePanelTerminal(target);
   };
   const closePanelTerminalStable = useStableCallback(closePanelTerminal);
   const requestCloseTerminal = (terminalId: string) => {

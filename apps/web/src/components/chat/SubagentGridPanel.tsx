@@ -10,6 +10,7 @@ import { ArrowUpRightIcon, BotIcon, Maximize2Icon, Minimize2Icon } from "lucide-
 import { useState } from "react";
 
 import { ComposerHandleContext } from "../../composerHandleContext";
+import type { SideChatParentPanel } from "../../lib/sideChatPane";
 import { cn } from "../../lib/utils";
 import { useQuietThreadProjection, useQuietThreadShell } from "../../state/entities";
 import { buildThreadRouteParams } from "../../threadRoutes";
@@ -31,7 +32,10 @@ function localSubagents(subagents: ReadonlyArray<OrchestrationV2Subagent>) {
   return [...byThreadId.values()];
 }
 
-export function SubagentGridPanel(props: { readonly threadRef: ScopedThreadRef }) {
+export function SubagentGridPanel(props: {
+  readonly threadRef: ScopedThreadRef;
+  readonly parentPanel: SideChatParentPanel;
+}) {
   const projection = useQuietThreadProjection(props.threadRef)?.projection ?? null;
   const [focusedThreadId, setFocusedThreadId] = useState<ThreadId | null>(null);
   const agents = localSubagents(projection?.subagents ?? []);
@@ -61,6 +65,7 @@ export function SubagentGridPanel(props: { readonly threadRef: ScopedThreadRef }
           <SubagentCell
             key={agent.childThreadId}
             environmentId={props.threadRef.environmentId}
+            parentPanel={props.parentPanel}
             agent={agent}
             focused={focused !== undefined}
             onToggleFocus={() =>
@@ -77,6 +82,7 @@ export function SubagentGridPanel(props: { readonly threadRef: ScopedThreadRef }
 
 function SubagentCell(props: {
   readonly environmentId: ScopedThreadRef["environmentId"];
+  readonly parentPanel: SideChatParentPanel;
   readonly agent: LocalSubagent;
   readonly focused: boolean;
   readonly onToggleFocus: () => void;
@@ -141,7 +147,7 @@ function SubagentCell(props: {
               threadId={agent.childThreadId}
               routeKind="server"
               reserveTitleBarControlInset={false}
-              embedded
+              embedded={props.parentPanel}
             />
           </ComposerHandleContext>
         </BackgroundThreadContext>
