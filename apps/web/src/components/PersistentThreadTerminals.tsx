@@ -8,6 +8,7 @@ import {
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+import { terminalNameKey, useTerminalNamesStore } from "../terminalNamesStore";
 import { memo, useEffect } from "react";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useStableCallback } from "../hooks/useStableCallback";
@@ -114,6 +115,7 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     selectThreadTerminalUiState(state.terminalUiStateByThreadKey, threadRef),
   );
   const visible = active && terminalUiState.terminalOpen;
+  const terminalNames = useTerminalNamesStore((state) => state.names);
   const knownTerminalSessions = useKnownTerminalSessions({
     environmentId: threadRef.environmentId,
     threadId,
@@ -131,7 +133,9 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   for (const session of drawerTerminalSessions) {
     terminalLabelsById.set(
       session.target.terminalId,
-      resolveTerminalSessionLabel(session.target.terminalId, session.state.summary),
+      terminalNames[
+        terminalNameKey(threadRef.environmentId, session.target.threadId, session.target.terminalId)
+      ] ?? resolveTerminalSessionLabel(session.target.terminalId, session.state.summary),
     );
   }
   const terminalLaunchLocationsById = new Map<string, TerminalLaunchLocationWithEnv>();
@@ -326,6 +330,7 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
       ? scopeProjectRef(draftThread.environmentId, draftThread.projectId)
       : null;
   const project = useProject(projectRef);
+  const terminalNames = useTerminalNamesStore((state) => state.names);
   const knownTerminalSessions = useKnownTerminalSessions({
     environmentId: threadRef.environmentId,
     threadId: threadRef.threadId,
@@ -352,7 +357,11 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
     const summary =
       knownTerminalSessions?.find((session) => session.target.terminalId === terminalId)?.state
         .summary ?? null;
-    terminalLabelsById.set(terminalId, resolveTerminalSessionLabel(terminalId, summary));
+    terminalLabelsById.set(
+      terminalId,
+      terminalNames[terminalNameKey(threadRef.environmentId, threadRef.threadId, terminalId)] ??
+        resolveTerminalSessionLabel(terminalId, summary),
+    );
     if (!project) continue;
     const terminalWorktreePath = resolveTerminalWorktreePath({
       launchContext,

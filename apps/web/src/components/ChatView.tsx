@@ -115,6 +115,7 @@ import { projectScriptCwd, resolveProjectScripts } from "@t3tools/shared/project
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+import { terminalNameKey, useTerminalNamesStore } from "../terminalNamesStore";
 import { useAtomValue } from "@effect/atom-react";
 import {
   type ComponentProps,
@@ -190,7 +191,6 @@ import {
   sharedPreviewIndex,
   useProjectIdByThreadKey,
 } from "../browser/browserScope";
-import { BrowserPersistenceTitlebarControl } from "../browser/BrowserPersistenceTitlebarControl";
 import { openUrlInPreview } from "../browser/openFileInPreview";
 import { registerAnnotationSender } from "../panelWindowAnnotations";
 import { useGitGraphProjectState, useGitGraphProjectStore } from "./gitGraph/gitGraphProjectStore";
@@ -312,7 +312,6 @@ import {
   useThreadHistory,
   useQuietThreadShell,
   useThreadCheckpointSummaries,
-  useThreadShells,
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -1033,12 +1032,18 @@ export default function ChatView(props: ChatViewProps) {
   const activeServerOrderedTerminalIds = activeThreadKnownSessions.map(
     (session) => session.target.terminalId,
   );
+  const terminalNames = useTerminalNamesStore((state) => state.names);
+  const terminalName = (threadId: string, terminalId: string) =>
+    activeThread
+      ? terminalNames[terminalNameKey(activeThread.environmentId, threadId, terminalId)]
+      : undefined;
   const activeTerminalLabelsById = (() => {
     const labels = new Map<string, string>();
     for (const session of activeThreadKnownSessions) {
       labels.set(
         session.target.terminalId,
-        resolveTerminalSessionLabel(session.target.terminalId, session.state.summary),
+        terminalName(session.target.threadId, session.target.terminalId) ??
+          resolveTerminalSessionLabel(session.target.terminalId, session.state.summary),
       );
     }
     return labels;
@@ -1156,7 +1161,6 @@ export default function ChatView(props: ChatViewProps) {
   const previewByThreadKey = useActivePreviewSessions();
   const browserPersistence = useClientSettings((settings) => settings.browserPersistence);
   const projectIdByThreadKey = useProjectIdByThreadKey();
-  const threadShells = useThreadShells();
   const previewSessionsReady = !activeEnvironmentServerBrowser || activePreviewState.listLoaded;
   const sharedPreview = sharedPreviewIndex({
     persistence: browserPersistence,
@@ -1173,7 +1177,6 @@ export default function ChatView(props: ChatViewProps) {
     environmentId: activeThreadRef?.environmentId ?? null,
     threadId: null,
   });
-  const threadTitleById = new Map(threadShells.map((shell) => [shell.id, shell.title] as const));
   const rememberedTerminals =
     useRememberedTerminalsStore((state) =>
       activeThreadRef ? state.byEnvironmentId[activeThreadRef.environmentId] : undefined,
@@ -1238,11 +1241,10 @@ export default function ChatView(props: ChatViewProps) {
     .join("\n");
   const panelTerminalLabelsById = new Map(activeTerminalLabelsById);
   for (const terminal of sharedTerminalSessions) {
-    const ownerTitle = threadTitleById.get(ThreadId.make(terminal.threadId));
-    const label = resolveTerminalSessionLabel(terminal.terminalId, terminal.summary);
     panelTerminalLabelsById.set(
       `${terminal.threadId}:${terminal.terminalId}`,
-      ownerTitle ? `${label} · ${ownerTitle}` : label,
+      terminalName(terminal.threadId, terminal.terminalId) ??
+        resolveTerminalSessionLabel(terminal.terminalId, terminal.summary),
     );
   }
   const panelPreviewSessions = { ...sharedPreview.sessions, ...activePreviewState.sessions };
@@ -3829,6 +3831,7 @@ export default function ChatView(props: ChatViewProps) {
       <PanelLayoutControls
         {...panelToggleControlProps}
         showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
+        showTerminalControl={false}
       />
     </>
   );
@@ -3846,7 +3849,6 @@ export default function ChatView(props: ChatViewProps) {
         canReloadBrowserTabs && browserTabIds.length > 0 ? reloadAllBrowserTabs : null
       }
     >
-      <BrowserPersistenceTitlebarControl />
       {panelToggleControls}
     </WorkspaceTitlebarControls>
   );
@@ -4539,6 +4541,18 @@ export default function ChatView(props: ChatViewProps) {
           onRenameDevice={(surfaceId, title) => {
             if (activeThreadRef)
               useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
+          }}
+          onRenameTerminal={(surfaceId, title) => {
+            const surface = threadRightPanelState.surfaces.find((entry) => entry.id === surfaceId);
+            if (!activeThreadRef || surface?.kind !== "terminal") return;
+            useTerminalNamesStore
+              .getState()
+              .rename(
+                activeThreadRef.environmentId,
+                surface.ownerThreadId ?? activeThreadRef.threadId,
+                surface.activeTerminalId,
+                title,
+              );
           }}
           onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
           onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}

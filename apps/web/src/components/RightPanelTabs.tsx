@@ -131,6 +131,8 @@ export interface RightPanelTabsProps {
   terminalLabelsById: ReadonlyMap<string, string>;
   onActivate: (surface: RightPanelSurface) => void;
   onRenameDevice?: (surfaceId: string, title: string) => void;
+  /** Renames the terminal a terminal tab shows; an empty title restores its own label. */
+  onRenameTerminal?: (surfaceId: string, title: string) => void;
   onCloseSurface: (surface: RightPanelSurface) => void;
   onCloseOtherSurfaces: (surface: RightPanelSurface) => void;
   onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
@@ -959,7 +961,8 @@ interface RightPanelTabHandlers {
   onAuxClick: (event: ReactMouseEvent, surface: RightPanelSurface) => void;
   onContextMenu: (event: ReactMouseEvent, surface: RightPanelSurface) => void;
   onStartRename: (surfaceId: string) => void;
-  onFinishRename: (surfaceId: string, title: string) => void;
+  /** Null when the name was left as it was. */
+  onFinishRename: (surfaceId: string, title: string | null) => void;
 }
 
 // Chromium on Linux only suppresses primary-selection paste when mouseup is cancelled.
@@ -1054,14 +1057,17 @@ function RightPanelTab(
       )}
       {props.renaming ? (
         <input
-          aria-label="Device tab name"
+          aria-label="Tab name"
           className="w-24 min-w-0 rounded-sm bg-background px-1 outline-none ring-1 ring-inset ring-ring"
           defaultValue={title}
           ref={(element) => {
             element?.focus();
             element?.select();
           }}
-          onBlur={(event) => onFinishRename(surface.id, event.currentTarget.value)}
+          onBlur={(event) => {
+            const value = event.currentTarget.value;
+            onFinishRename(surface.id, value === title ? null : value);
+          }}
           onKeyDown={(event) => {
             event.stopPropagation();
             if (event.key === "Enter") event.currentTarget.blur();
@@ -1078,7 +1084,7 @@ function RightPanelTab(
               <button
                 type="button"
                 onDoubleClick={() => {
-                  if (surface.kind === "device" && props.canRename) onStartRename(surface.id);
+                  if (props.canRename) onStartRename(surface.id);
                 }}
                 className="cursor-pointer flex min-w-0 items-center"
                 aria-label={sideChatState === null ? undefined : `${title}, ${sideChatState}`}
@@ -1149,6 +1155,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const tabListRef = useRef<HTMLDivElement>(null);
   const addSurfaceTriggerRef = useRef<HTMLButtonElement>(null);
   const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
+  const canRenameSurface = (surface: RightPanelSurface) =>
+    (surface.kind === "device" && props.onRenameDevice !== undefined) ||
+    (surface.kind === "terminal" && props.onRenameTerminal !== undefined);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
   const [tabScrollState, setTabScrollState] = useState({
     hasOverflow: false,
@@ -1316,8 +1325,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     if (surfaceIndex < 0) return;
 
     const items: ContextMenuItem<TabContextMenuAction>[] = [];
-    if (surface.kind === "device" && props.onRenameDevice)
-      items.push({ id: "rename", label: "Rename" });
+    if (canRenameSurface(surface)) items.push({ id: "rename", label: "Rename" });
     if (surface.kind === "file" && surface.attachment === undefined) {
       items.push({ id: "copy-path", label: "Copy path" });
     }
@@ -1458,9 +1466,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
   );
   const onStartRenameTab = useStableCallback((surfaceId: string) => setRenamingDevice(surfaceId));
-  const onFinishRenameTab = useStableCallback((surfaceId: string, title: string) => {
-    props.onRenameDevice?.(surfaceId, title);
+  const onFinishRenameTab = useStableCallback((surfaceId: string, title: string | null) => {
     setRenamingDevice(null);
+    if (title === null) return;
+    const kind = props.surfaces.find((surface) => surface.id === surfaceId)?.kind;
+    if (kind === "device") props.onRenameDevice?.(surfaceId, title);
+    if (kind === "terminal") props.onRenameTerminal?.(surfaceId, title);
   });
 
   // A newly active tab, or tabs that start overflowing, can sit outside the scrolled strip.
@@ -1590,7 +1601,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     environmentId={props.environmentId}
                     pullRequestStatusSeed={props.pullRequestStatusSeeds?.[surface.id]}
                     renaming={renamingDevice === surface.id}
-                    canRename={props.onRenameDevice !== undefined}
+                    canRename={canRenameSurface(surface)}
                     ownsDesktopTitleBar={ownsDesktopTitleBar}
                     {...(accentColor === undefined ? {} : { accentColor })}
                     onActivate={onActivateTab}
