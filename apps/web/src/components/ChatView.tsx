@@ -330,7 +330,6 @@ import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveScrollToEndClearance } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
-import { latestSideChatSource, useSideChat } from "./chat/useSideChat";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
@@ -449,8 +448,6 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
-      /** A side chat inside the right panel: no header, no panel of its own, no shortcuts. */
-      embedded?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -460,7 +457,6 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
-      embedded?: never;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -476,7 +472,6 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
-    embedded = false,
   } = props;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -3203,30 +3198,10 @@ export default function ChatView(props: ChatViewProps) {
     });
   }, [toggleRightPanelStable, toggleRightPanelMaximizedStable]);
 
-  usePasteToFocusComposer(activeThreadId, composerRef, backgroundThread);
-  const sideChat = useSideChat({
-    threadRef: isServerThread && !embedded && canOperateThread ? activeThreadRef : null,
-    title: activeThread?.title,
-    source: latestSideChatSource(serverVisibleTurnItems, serverProjection?.runs ?? []),
-    onError: (message) => {
-      if (activeThread) setThreadError(activeThread.id, message);
-    },
-    getTurnSettings: () => {
-      const context = composerRef.current?.getSendContext();
-      return context?.providerAvailable
-        ? {
-            modelSelection: context.selectedModelSelection,
-            runtimeMode,
-            interactionMode: context.interactionMode,
-          }
-        : null;
-    },
-  });
-  const openSideChatStable = useStableCallback(() => void sideChat.open());
+  usePasteToFocusComposer(activeThreadId, composerRef);
   const openSubagentsStable = useStableCallback(() => {
     if (activeThreadRef) useRightPanelStore.getState().open(activeThreadRef, "subagents");
   });
-  const sendSideChatStable = useStableCallback((prompt: string) => void sideChat.open(prompt));
   const { onConfirmRevertStable, onForkFromRunStable, onRevertTimelineTurnStable } =
     useTimelineRewind({
       environmentId,
@@ -3389,7 +3364,6 @@ export default function ChatView(props: ChatViewProps) {
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     handleInteractionModeChange,
-    onSideChat: sideChat.available ? sendSideChatStable : undefined,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
   });
@@ -3792,7 +3766,7 @@ export default function ChatView(props: ChatViewProps) {
         threadRef={activeThreadRef}
         state={deviceState}
       />
-      {rightPanelControlsAtRoot && !embedded ? panelLayoutControls : null}
+      {rightPanelControlsAtRoot ? panelLayoutControls : null}
       <ChatColumn
         omitted={isPanelWindow}
         className={cn(
@@ -3803,48 +3777,46 @@ export default function ChatView(props: ChatViewProps) {
         data-chat-column
         inert={rightPanelMaximized}
       >
-        {embedded ? null : (
-          <header
-            ref={threadPanelPopoverAnchorRef}
-            data-chat-header
-            className={cn(
-              "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
-              isElectron
-                ? cn(
-                    "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
-                    reserveTitleBarControlInset &&
-                      !inlineRightPanelOwnsTitleBar &&
-                      "wco:pr-(--workspace-native-controls-inset)",
-                  )
-                : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
-              COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-            )}
-          >
-            {isElectron && rightPanelControlsAtRoot ? (
-              <span
-                aria-hidden
-                className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-(--workspace-titlebar-controls-width) [-webkit-app-region:no-drag]"
-              />
-            ) : null}
-            {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
-            {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
-            <ChatHeader
-              activeThreadEnvironmentId={activeThread.environmentId}
-              activeThreadId={activeThread.id}
-              isServerThread={isServerThread}
-              activeThreadTitle={activeThread.title}
-              activeThreadLinkOrigin={activeThreadShell?.linkOrigin?.label ?? null}
-              activeProject={activeProject ?? null}
-              parentThreadLink={headerParentThreadLink}
-              onOpenThread={onOpenRelatedThreadStable}
-              rightPanelOpen={inlineRightPanelOwnsTitleBar}
-              onNewThreadInProject={handleNewThreadInActiveProjectStable}
-              {...(activeDraftLogicalProjectKey
-                ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
-                : {})}
+        <header
+          ref={threadPanelPopoverAnchorRef}
+          data-chat-header
+          className={cn(
+            "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
+            isElectron
+              ? cn(
+                  "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
+                  reserveTitleBarControlInset &&
+                    !inlineRightPanelOwnsTitleBar &&
+                    "wco:pr-(--workspace-native-controls-inset)",
+                )
+              : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
+            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+          )}
+        >
+          {isElectron && rightPanelControlsAtRoot ? (
+            <span
+              aria-hidden
+              className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-(--workspace-titlebar-controls-width) [-webkit-app-region:no-drag]"
             />
-          </header>
-        )}
+          ) : null}
+          {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+          {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
+          <ChatHeader
+            activeThreadEnvironmentId={activeThread.environmentId}
+            activeThreadId={activeThread.id}
+            isServerThread={isServerThread}
+            activeThreadTitle={activeThread.title}
+            activeThreadLinkOrigin={activeThreadShell?.linkOrigin?.label ?? null}
+            activeProject={activeProject ?? null}
+            parentThreadLink={headerParentThreadLink}
+            onOpenThread={onOpenRelatedThreadStable}
+            rightPanelOpen={inlineRightPanelOwnsTitleBar}
+            onNewThreadInProject={handleNewThreadInActiveProjectStable}
+            {...(activeDraftLogicalProjectKey
+              ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
+              : {})}
+          />
+        </header>
 
         <div className="relative flex min-h-0 min-w-0 flex-1">
           <ThreadFindCanvas
@@ -4122,7 +4094,6 @@ export default function ChatView(props: ChatViewProps) {
                               resumeCompactionTokens={resumeCompactionTokens}
                               keepFullHistory={keepFullHistory}
                               onToggleKeepFullHistory={toggleKeepFullHistoryStable}
-                              sideChatAvailable={sideChat.available}
                               onUsageLimitsCommand={
                                 usageLimitsOffered &&
                                 usageLimitsKey !== null &&
@@ -4408,7 +4379,7 @@ export default function ChatView(props: ChatViewProps) {
         <PreviewSessionSync threadRef={activeThreadRef} />
       ) : null}
 
-      {rightPanelPresent && activeThreadRef && !embedded ? (
+      {rightPanelPresent && activeThreadRef ? (
         <ChatRightPanel
           sheet={shouldUsePlanSidebarSheet}
           workspaceLayoutElement={workspaceLayoutElement}
@@ -4477,7 +4448,6 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequest={addPullRequestSurfaceStable}
           onAddPullRequests={addPullRequestsSurfaceStable}
           onAddDevice={addDeviceSurfaceStable}
-          onAddSideChat={openSideChatStable}
           onAddSubagents={openSubagentsStable}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}
@@ -4486,7 +4456,6 @@ export default function ChatView(props: ChatViewProps) {
           pullRequestAvailable={pullRequestSurfaceAvailable}
           pullRequestsAvailable={pullRequestsSurfaceAvailable}
           deviceAvailable={activeThreadRef !== null}
-          sideChatAvailable={sideChat.available}
           subagentsAvailable={isServerThread}
         >
           {rightPanelContent}

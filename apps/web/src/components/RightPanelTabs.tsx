@@ -36,7 +36,6 @@ import {
   FileDiff,
   Files,
   Globe2,
-  MessagesSquare,
   Plus,
   TerminalSquare,
   GitGraph,
@@ -147,8 +146,6 @@ export interface RightPanelTabsProps {
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddDevice: () => void;
-  /** Opens a side chat beside this one; the tab keeps the fork for later questions. */
-  onAddSideChat: () => void;
   /** Opens a grid of this thread's subagents, each a live chat. */
   onAddSubagents: () => void;
   /** Opens the project's Git Graph, shown in every chat of the project. */
@@ -161,7 +158,6 @@ export interface RightPanelTabsProps {
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
-  sideChatAvailable: boolean;
   subagentsAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   children: ReactNode;
@@ -190,7 +186,6 @@ const SURFACE_DISABLED_REASONS = {
   pullRequests: "No linked pull requests are available for this thread.",
   device: "Devices are only available from a thread.",
   gitGraph: "Git Graph is only available for Git repositories.",
-  sideChat: "Side chats need a finished response to branch from.",
   subagents: "Subagents are only available from a thread.",
 } as const;
 
@@ -217,7 +212,6 @@ const SURFACE_UNAVAILABLE_HINTS = {
   pullRequests: "No linked pull requests available.",
   device: "Available from a thread.",
   gitGraph: "Available for Git repositories.",
-  sideChat: "Available after a finished response.",
   subagents: "Available from a thread.",
 } as const;
 
@@ -350,7 +344,6 @@ function RightPanelEmptyState(props: {
   onAddPullRequest: () => void;
   onAddPullRequests: () => void;
   onAddDevice: () => void;
-  onAddSideChat: () => void;
   /** Opens a grid of this thread's subagents, each a live chat. */
   onAddSubagents: () => void;
   /** Opens the project's Git Graph, shown in every chat of the project. */
@@ -363,7 +356,6 @@ function RightPanelEmptyState(props: {
   pullRequestAvailable: boolean;
   pullRequestsAvailable: boolean;
   deviceAvailable: boolean;
-  sideChatAvailable: boolean;
   subagentsAvailable: boolean;
 }) {
   const [highlight, setHighlight] = useState(-1);
@@ -433,15 +425,6 @@ function RightPanelEmptyState(props: {
       available: props.deviceAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.device,
       onClick: props.onAddDevice,
-    },
-    {
-      label: "Side chat",
-      description: "Ask a side question without touching this thread.",
-      icon: MessagesSquare,
-      shortcut: "S",
-      available: props.sideChatAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.sideChat,
-      onClick: props.onAddSideChat,
     },
     {
       label: "Subagents",
@@ -662,8 +645,6 @@ function surfaceTitle(
       return "Git Graph";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
-    case "side-chat":
-      return "Side chat";
     case "subagents":
       return "Subagents";
     case "preview": {
@@ -772,8 +753,6 @@ function SurfaceIcon({
       ) : (
         <Smartphone className="size-3 shrink-0" />
       );
-    case "side-chat":
-      return <MessagesSquare className="size-3 shrink-0" />;
     case "subagents":
       return <Bot className="size-3 shrink-0" />;
   }
@@ -1212,14 +1191,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.deviceAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.device,
       onClick: props.onAddDevice,
-    },
-    {
-      label: "Side chat",
-      icon: MessagesSquare,
-      shortcut: "S",
-      available: props.sideChatAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.sideChat,
-      onClick: props.onAddSideChat,
     },
     {
       label: "Subagents",
@@ -1710,8 +1681,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             pullRequestAvailable={props.pullRequestAvailable}
             pullRequestsAvailable={props.pullRequestsAvailable}
             deviceAvailable={props.deviceAvailable}
-            sideChatAvailable={props.sideChatAvailable}
-            onAddSideChat={props.onAddSideChat}
             subagentsAvailable={props.subagentsAvailable}
             onAddSubagents={props.onAddSubagents}
             onAddGitGraph={props.onAddGitGraph}

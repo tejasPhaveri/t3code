@@ -65,7 +65,6 @@ const thread = (
     readonly archivedAt?: DateTime.Utc;
     readonly deletedAt?: DateTime.Utc;
     readonly subagentOf?: ThreadId;
-    readonly sideChat?: boolean;
     readonly title?: string;
     readonly settledAt?: DateTime.Utc;
     readonly linkedPullRequest?: ThreadLinkedPullRequest;
@@ -98,12 +97,7 @@ const thread = (
           relationshipToParent: "subagent",
           rootThreadId: overrides.subagentOf,
         }
-      : {
-          parentThreadId: null,
-          relationshipToParent: null,
-          rootThreadId: threadId,
-          ...(overrides.sideChat === true ? { sideChat: true } : {}),
-        },
+      : { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
     forkedFrom: null,
     createdAt: at(0),
     updatedAt: at(0),
@@ -206,9 +200,6 @@ it.layer(layerTest)("ThreadSearch", (it) => {
         message(ThreadId.make("thread:deleted"), "deleted", "user", "needle deleted"),
         thread(ThreadId.make("thread:orphaned"), deletedProject),
         message(ThreadId.make("thread:orphaned"), "orphaned", "user", "needle orphaned"),
-        // A side chat sits beside its thread in a panel, so search never offers it as a result.
-        thread(ThreadId.make("thread:side-chat"), project, { sideChat: true }),
-        message(ThreadId.make("thread:side-chat"), "side-chat", "user", "needle in a side chat"),
       ];
       yield* Effect.forEach(events, projections.apply, { discard: true });
 
@@ -782,13 +773,11 @@ it.layer(layerTest)("ThreadSearch.searchThreadsWithOlderSettledRows", (it) => {
       yield* createProject(project);
       const old = ThreadId.make("thread:plover-old");
       const recent = ThreadId.make("thread:plover-recent");
-      const sideChat = ThreadId.make("thread:plover-side-chat");
       yield* Effect.forEach(
         [
           thread(old, project, { title: "Plover nest", settledAt: at(10) }),
           thread(recent, project, { title: "Plover nest", settledAt: at(50) }),
           message(recent, "plover-note", "user", "a plover note", { minute: 2 }),
-          thread(sideChat, project, { title: "Plover nest", settledAt: at(10), sideChat: true }),
         ],
         projections.apply,
         { discard: true },

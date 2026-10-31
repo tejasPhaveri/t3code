@@ -1,6 +1,5 @@
 import {
   ContextTransferId,
-  isForkableSourceRunStatus,
   OrchestrationV2Actor,
   OrchestrationV2AppThread,
   OrchestrationV2ContextSourcePoint,
@@ -33,7 +32,15 @@ export class ThreadForkPlanError extends Schema.TaggedError<ThreadForkPlanError>
 ) {}
 
 /** waiting means provider-finished with checkpoint capture pending. */
-export { isForkableSourceRunStatus } from "@t3tools/contracts";
+export function isForkableSourceRunStatus(status: OrchestrationV2Run["status"]): boolean {
+  return (
+    status === "completed" ||
+    status === "waiting" ||
+    status === "failed" ||
+    status === "interrupted" ||
+    status === "cancelled"
+  );
+}
 
 export function forkableSourceRunStatusError(
   run: Pick<OrchestrationV2Run, "id" | "status">,
@@ -51,7 +58,6 @@ export interface ThreadForkServiceV2Shape {
     readonly transferId: ContextTransferId;
     readonly targetThreadId: ThreadId;
     readonly title?: string;
-    readonly sideChat?: boolean;
     readonly createdBy: OrchestrationV2Actor;
     readonly creationSource: OrchestrationV2CreationSource;
     readonly createdAt: DateTime.Utc;
@@ -89,7 +95,6 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           parentThreadId: input.sourceProjection.thread.id,
           relationshipToParent: "fork",
           rootThreadId: input.sourceProjection.thread.lineage.rootThreadId,
-          ...(input.sideChat === true ? { sideChat: true } : {}),
         },
         forkedFrom: {
           type: "run",

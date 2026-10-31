@@ -1495,7 +1495,6 @@ export function PullRequestsPage() {
             onAddPullRequest={() => undefined}
             onAddPullRequests={() => undefined}
             onAddDevice={() => undefined}
-            onAddSideChat={() => undefined}
             onAddSubagents={() => undefined}
             browserAvailable={false}
             terminalAvailable={false}
@@ -1504,7 +1503,6 @@ export function PullRequestsPage() {
             pullRequestAvailable={false}
             pullRequestsAvailable={false}
             deviceAvailable={false}
-            sideChatAvailable={false}
             subagentsAvailable={false}
             pullRequestStatusSeeds={listedPullRequestTabStatuses}
           >

@@ -154,21 +154,8 @@ export const OrchestrationV2AppThreadLineage = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
   rootThreadId: ThreadId,
-  /** A fork the user opened beside its parent, never a thread of its own in the lists. */
-  sideChat: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
-
-/**
- * Whether thread lists show the thread. Subagents and side chats only ever show inside
- * their parent, so both are unlisted everywhere a client enumerates threads.
- */
-export function isListedThreadLineage(lineage: {
-  readonly relationshipToParent: "fork" | "subagent" | null;
-  readonly sideChat?: boolean | undefined;
-}): boolean {
-  return lineage.relationshipToParent !== "subagent" && lineage.sideChat !== true;
-}
 
 export const OrchestrationV2ContextTransferType = Schema.Literals([
   "fork",
@@ -603,20 +590,6 @@ export const OrchestrationV2RunStatus = Schema.Literals([
   "rolled_back",
 ]);
 export type OrchestrationV2RunStatus = typeof OrchestrationV2RunStatus.Type;
-
-/**
- * A run whose history settled. `waiting` counts: its provider turn already ended and only
- * checkpoint capture is left. A fork of anything else would copy a turn still being written.
- */
-export function isForkableSourceRunStatus(status: OrchestrationV2RunStatus): boolean {
-  return (
-    status === "completed" ||
-    status === "waiting" ||
-    status === "failed" ||
-    status === "interrupted" ||
-    status === "cancelled"
-  );
-}
 
 export const OrchestrationV2DelegatedCompletionTaskDeliveryState = Schema.Literals([
   "pending",
@@ -2163,7 +2136,7 @@ export function isOlderSettledThreadShell(
   beforeMs: number,
 ): boolean {
   return (
-    isListedThreadLineage(thread.lineage) &&
+    thread.lineage.relationshipToParent !== "subagent" &&
     thread.settledOverride === "settled" &&
     thread.settledAt !== null &&
     DateTime.toEpochMillis(thread.settledAt) < beforeMs
@@ -3268,8 +3241,6 @@ export const OrchestrationV2Command = Schema.Union([
     targetThreadId: ThreadId,
     sourcePoint: OrchestrationV2ThreadForkSourcePoint,
     title: Schema.optional(TrimmedNonEmptyString),
-    /** Opens as a side chat beside the source rather than a thread of its own. */
-    sideChat: Schema.optional(Schema.Boolean),
     createdAt: Schema.optional(Schema.DateTimeUtc),
   }),
   Schema.Struct({
