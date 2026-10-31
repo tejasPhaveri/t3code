@@ -3,6 +3,7 @@ import type { AgentOptions, SDKModel } from "@cursor/sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
+  DEFAULT_SERVER_SETTINGS,
   MessageId,
   NodeId,
   ProjectId,
@@ -21,6 +22,8 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { vi } from "vite-plus/test";
 import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientResponse from "effect/http/HttpClientResponse";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import {
   DEFAULT_HANDOFF_TOKEN_CAP,
@@ -68,9 +71,34 @@ const layerTest = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
 
 it.layer(layerTest)("CursorDriver", (it) => {
   it.effect(
-    "persists browser credentials, uses them for chat, and closes the SDK session on logout",
+    "persists browser credentials, uses them for chat and opted-in limits, and closes the SDK session on logout",
     () =>
       Effect.gen(function* () {
+        yield* (yield* TestProviderHost.TestProviderHostSettings).set({
+          ...DEFAULT_SERVER_SETTINGS,
+          cursorKeychainUsageEnabled: true,
+        });
+        const withUsageServices = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          effect.pipe(
+            Effect.provideService(CursorKeychain.CursorKeychain, {
+              accessToken: Effect.succeed("keychain-token"),
+            }),
+            Effect.provideService(
+              HttpClient.HttpClient,
+              HttpClient.make((request) => {
+                expect(request.url).toBe(
+                  "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+                );
+                expect(request.headers.authorization).toBe("Bearer keychain-token");
+                return Effect.succeed(
+                  HttpClientResponse.fromWeb(
+                    request,
+                    Response.json({ planUsage: { totalPercentUsed: 42 } }),
+                  ),
+                );
+              }),
+            ),
+          );
         const login = vi.spyOn(Cursor.auth, "login").mockImplementation(async (options) => {
           options?.onLoginUrl?.("https://cursor.com/loginDeepControl?challenge=test-only");
           await options?.store?.save({
@@ -108,6 +136,7 @@ it.layer(layerTest)("CursorDriver", (it) => {
         const openedKeys: Array<string | undefined> = [];
         let closed = 0;
         const instance = yield* CursorDriver.create(input).pipe(
+          withUsageServices,
           Effect.provideService(CursorAgentSdk.CursorAgentSdkRunner, {
             assertComplete: Effect.void,
             open: (request) =>
@@ -142,6 +171,7 @@ it.layer(layerTest)("CursorDriver", (it) => {
           },
           setup: { canAuthenticate: true, canInstall: false },
         });
+        expect((yield* instance.snapshot.refresh).usageLimits?.windows[0]?.usedPercent).toBe(42);
         const threadId = ThreadId.make("cursor-browser-thread");
         const modelSelection = { instanceId: input.instanceId, model: "auto" };
         const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -158,8 +188,8 @@ it.layer(layerTest)("CursorDriver", (it) => {
         yield* runtime.ensureThread({ threadId, modelSelection, runtimePolicy });
         expect(openedKeys).toEqual(["instance-browser-key"]);
         expect(closed).toBe(0);
-        const recreated = yield* CursorDriver.create(input);
-        expect((yield* recreated.snapshot.refresh).auth.status).toBe("authenticated");
+        const recreated = yield* CursorDriver.create(input).pipe(withUsageServices);
+        expect((yield* recreated.snapshot.refresh).usageLimits?.windows[0]?.usedPercent).toBe(42);
         yield* instance.auth!.logout(Effect.void);
         expect(closed).toBe(1);
         expect((yield* instance.snapshot.getSnapshot).auth.status).toBe("unauthenticated");
@@ -170,7 +200,7 @@ it.layer(layerTest)("CursorDriver", (it) => {
         ).toBe("Failure");
         expect(openedKeys).toEqual(["instance-browser-key"]);
         expect(closed).toBe(1);
-      }).pipe(Effect.scoped),
+      }).pipe(Effect.provideService(HostProcess.Platform, "darwin"), Effect.scoped),
   );
 
   it.effect("budgets handoffs for the SDK model across catalog refreshes and option changes", () =>

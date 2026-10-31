@@ -236,9 +236,10 @@ export const CursorDriver: ProviderDriver<
             (snapshot) =>
               host.settings.get.pipe(
                 Effect.flatMap((settings) =>
+                  // Only a configured CURSOR_API_KEY opts out; a browser sign-in key is not one.
                   readCursorUsageLimits(
                     effectiveConfig,
-                    { ...processEnv, CURSOR_API_KEY: apiKey },
+                    processEnv,
                     settings.cursorKeychainUsageEnabled,
                   ),
                 ),
