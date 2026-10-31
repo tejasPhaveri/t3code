@@ -21,6 +21,7 @@ vi.mock("../components/ChatView.logic", () => ({
 vi.mock("../previewStateStore", () => ({
   useThreadPreviewState: () => ({ sessions: {}, desktopByTabId: {} }),
   setActivePreviewTab: () => {},
+  useActivePreviewSessions: () => ({}),
   beginPreviewSessionClose: () => {},
   cancelPreviewSessionClose: () => {},
 }));
@@ -32,6 +33,7 @@ vi.mock("../state/entities", () => ({
   useQuietThreadShell: () => null,
   useProject: () => null,
   readThreadShell: () => null,
+  useThreadShells: () => [],
 }));
 vi.mock("../state/terminalSessions", () => ({ useKnownTerminalSessions: () => null }));
 vi.mock("../composerDraftStore", async () => {
