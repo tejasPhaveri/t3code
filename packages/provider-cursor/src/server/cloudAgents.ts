@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { ProviderCloudAgent } from "@t3tools/provider-core/server/driver";
-import { Agent } from "./sdk.ts";
+import { loadCursorSdk } from "./sdk.ts";
 
 /** Cursor serves each cloud agent at this path under its app host. */
 const cursorAgentWebUrl = (agentId: string) =>
@@ -61,12 +61,14 @@ export const listCursorCloudAgents = Effect.fn("listCursorCloudAgents")(function
   nowMs: number,
 ) {
   const listed = yield* Effect.tryPromise({
-    try: () =>
-      Agent.list({
+    try: () => {
+      const { Agent } = loadCursorSdk();
+      return Agent.list({
         runtime: "cloud",
         ...(apiKey === undefined ? {} : { apiKey }),
         limit: 100,
-      }),
+      });
+    },
     catch: (cause) => new CursorCloudAgentsError({ cause }),
   });
   return cursorCloudAgentsFromSdk(listed.items, nowMs);
