@@ -11,6 +11,7 @@ import {
   setLocalStorageItem,
 } from "./useLocalStorage";
 import { useResizeDrag } from "./useResizeDrag";
+import { useStableCallback } from "./useStableCallback";
 
 const WidthSchema = Schema.Finite;
 
@@ -82,7 +83,7 @@ export function useSavedResizableWidth(storageKey: string): number | null {
   );
 }
 
-/** Persist on drag end to avoid a storage write on every animation frame. */
+/** Uses the current default until a width is chosen; persists on drag end, not every frame. */
 export function useResizableWidth(options: UseResizableWidthOptions): {
   readonly width: number;
   readonly setWidth: (width: number) => void;
@@ -97,6 +98,9 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
 
   const savedWidth = useSavedResizableWidth(storageKey);
   const clampedWidth = clamp(savedWidth ?? defaultWidth);
+  const restoreWidth = useStableCallback((host: HTMLElement | null) => {
+    host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${clampedWidth}px`);
+  });
 
   const drag = useResizeDrag<HTMLElement>((event) => {
     const host = event.currentTarget.parentElement;
@@ -114,8 +118,9 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
         host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${nextWidth}px`);
         return nextWidth;
       },
-      finish(finalWidth) {
-        setResizableWidth(startStorageKey, finalWidth);
+      finish(finalWidth, moved) {
+        if (moved) setResizableWidth(startStorageKey, finalWidth);
+        else restoreWidth(host);
       },
       cleanup(committed) {
         host?.style.removeProperty("transition-property");

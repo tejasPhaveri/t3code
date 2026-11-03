@@ -10,6 +10,7 @@ import { MorphIcon } from "~/components/MorphIcon";
 import { memo, type ReactNode, useLayoutEffect, useRef } from "react";
 
 import { observeResize } from "~/lib/observeResize";
+import { cn } from "~/lib/utils";
 
 import type { ThreadPanelPresentation } from "../../rightPanelLayout";
 import { Button } from "../ui/button";
@@ -219,6 +220,11 @@ const TITLEBAR_CONTROLS_WIDTH_PROPERTY = "--workspace-titlebar-controls-width";
 export function WorkspaceTitlebarControls(props: {
   /** Null when the chat has no browser tabs to reload. */
   readonly onReloadBrowserTabs: (() => void) | null;
+  readonly showMaximizeControl: boolean;
+  readonly rightPanelOpen: boolean;
+  readonly animationsActive: boolean;
+  readonly maximized: boolean;
+  readonly onToggleMaximized: () => void;
   readonly children: ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -260,6 +266,27 @@ export function WorkspaceTitlebarControls(props: {
           />
           <TooltipPopup side="bottom">Reload all browser tabs</TooltipPopup>
         </Tooltip>
+      ) : null}
+      {props.showMaximizeControl ? (
+        <span
+          aria-hidden={!props.rightPanelOpen}
+          // Fading out on close would show it beside the thread details toggle that replaces it.
+          className={cn(
+            "flex shrink-0",
+            props.rightPanelOpen &&
+              props.animationsActive &&
+              "motion-safe:transition-opacity motion-safe:duration-(--panel-animation-duration) motion-safe:ease-out",
+            props.rightPanelOpen
+              ? "pointer-events-auto opacity-100"
+              : "pointer-events-none absolute right-full mr-1 opacity-0",
+          )}
+          inert={!props.rightPanelOpen}
+        >
+          <RightPanelMaximizeControl
+            maximized={props.maximized}
+            onToggle={props.onToggleMaximized}
+          />
+        </span>
       ) : null}
       <div className="pointer-events-auto flex h-full items-center">{props.children}</div>
     </div>
