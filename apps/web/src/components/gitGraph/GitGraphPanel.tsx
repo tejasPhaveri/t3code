@@ -7,18 +7,25 @@ import {
   ProjectId,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { ChevronDown, CloudDownload, GitBranch, Search, X } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { observeResize } from "~/lib/observeResize";
+import { randomUUID } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { gitGraphEnvironment } from "~/state/gitGraph";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
+import { useGitStackedAction } from "~/state/sourceControlActions";
 
 import { type TextPrompt, TextPromptDialog } from "../TextPromptDialog";
+import { CreatePullRequestDialog } from "./CreatePullRequestDialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import {
@@ -31,12 +38,15 @@ import {
   DropdownMenuTrigger,
 } from "../ui/menu";
 import { RefreshIcon } from "../ui/refresh-icon";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   branchFilterOptions,
   branchFilterRefs,
   DEFAULT_BRANCH_FILTER,
+  defaultPullRequestBase,
   describeBranchFilter,
+  localBranchNames,
   type BranchFilterState,
 } from "./gitGraphBranches";
 import { buildFindableRows, findMatchingRows, stepMatch } from "./gitGraphFind";
@@ -93,6 +103,7 @@ type BranchMenuAction =
   | "delete"
   | "push"
   | "push-force"
+  | "create-pr"
   | "compare-with-head"
   | "copy-name";
 
@@ -126,6 +137,7 @@ export function GitGraphPanel(props: {
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(0);
   const [prompt, setPrompt] = useState<TextPrompt | null>(null);
+  const [pullRequest, setPullRequest] = useState<{ head: string; base: string } | null>(null);
   const [fetching, setFetching] = useState(false);
   // Background refreshes stay silent; a click shows its work until newer data lands.
   const [refreshRequestedAt, setRefreshRequestedAt] = useState<number | null>(null);
@@ -215,6 +227,7 @@ export function GitGraphPanel(props: {
     refreshRemotes();
   });
   const runAction = useGitGraphAction({ environmentId, cwd, onSettled: refreshAll });
+  const stackedAction = useGitStackedAction({ environmentId, cwd });
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Refreshes the graph on a timer while the panel is visible
   useEffect(() => {
@@ -377,6 +390,60 @@ export function GitGraphPanel(props: {
     if (confirmed) {
       void runAction({ _tag: "Merge", ref }, { success: `Merged ${label} into ${currentBranch}` });
     }
+  };
+
+  const openPullRequest = (head: string) => {
+    const branches = localBranchNames(log.data?.refs ?? []);
+    setPullRequest({
+      head,
+      base: defaultPullRequestBase(head, branches, currentBranch),
+    });
+  };
+
+  const createPullRequest = async (head: string, base: string) => {
+    const toastId = toastManager.add({
+      type: "loading",
+      title: `Creating a pull request for ${head} into ${base}...`,
+    });
+    const result = await stackedAction.run({
+      actionId: randomUUID(),
+      action: "create_pr",
+      headBranch: head,
+      baseBranch: base,
+    });
+    refreshAll();
+    pullRequests.refresh();
+    if (result._tag === "Failure") {
+      if (isAtomCommandInterrupted(result)) {
+        toastManager.close(toastId);
+        return;
+      }
+      const error = squashAtomCommandFailure(result);
+      toastManager.update(toastId, {
+        type: "error",
+        title: "Could not create the pull request",
+        description: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    const { pr, toast } = result.value;
+    const url = pr.url;
+    toastManager.update(toastId, {
+      type: "success",
+      title: toast.title,
+      description: pr.title ?? toast.description,
+      ...(url === undefined
+        ? {}
+        : {
+            actionProps: {
+              children: "Open",
+              onClick: (event: MouseEvent<HTMLElement>) => {
+                toastManager.close(toastId);
+                void openPrLink(event, url);
+              },
+            },
+          }),
+    });
   };
 
   const showMenu = async <T extends string>(
@@ -629,6 +696,11 @@ export function GitGraphPanel(props: {
       { id: "create-branch", label: "Create branch from here…" },
       { id: "push", label: "Push", disabled: !branch.checkedOut, separatorBefore: true },
       { id: "push-force", label: "Force push (with lease)", disabled: !branch.checkedOut },
+      {
+        id: "create-pr",
+        label: "Create pull request…",
+        disabled: !stackedAction.isAllowed || (log.data?.remotes.length ?? 0) === 0,
+      },
       { id: "rename", label: "Rename…", separatorBefore: true },
       { id: "delete", label: "Delete…", destructive: true, disabled: branch.checkedOut },
       { id: "copy-name", label: "Copy branch name", separatorBefore: true },
@@ -671,6 +743,9 @@ export function GitGraphPanel(props: {
           { _tag: "Push", branch: branch.name, force: true },
           { success: `Force pushed ${branch.name}` },
         );
+        break;
+      case "create-pr":
+        openPullRequest(branch.name);
         break;
       case "rename":
         promptRenameBranch(branch.name);
@@ -811,16 +886,27 @@ export function GitGraphPanel(props: {
 
   return (
     <div className="flex h-full min-h-0 bg-background text-xs">
-      <aside className="w-72 min-w-56 shrink-0 overflow-auto border-r border-border">
-        <GitSourceControl
-          worktrees={worktrees.data?.worktrees ?? null}
-          error={worktrees.error}
-          cwd={cwd}
-          runAction={runAction}
-          onOpenDiff={props.onOpenDiff}
-          onOpenFile={props.onOpenFile}
+      <div
+        className="relative shrink-0 border-r border-border"
+        style={{ width: columnWidths.sidebar }}
+      >
+        <aside className="h-full overflow-auto">
+          <GitSourceControl
+            worktrees={worktrees.data?.worktrees ?? null}
+            error={worktrees.error}
+            cwd={cwd}
+            runAction={runAction}
+            onOpenDiff={props.onOpenDiff}
+            onOpenFile={props.onOpenFile}
+          />
+        </aside>
+        <ColumnResizeHandle
+          label="Source control"
+          min={224}
+          max={720}
+          {...columnResizeProps("sidebar")}
         />
-      </aside>
+      </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1">
           <DropdownMenu>
@@ -1207,6 +1293,17 @@ export function GitGraphPanel(props: {
         />
       ) : null}
       {prompt ? <TextPromptDialog prompt={prompt} onClose={() => setPrompt(null)} /> : null}
+      {pullRequest ? (
+        <CreatePullRequestDialog
+          branches={localBranchNames(log.data?.refs ?? [])}
+          initialHead={pullRequest.head}
+          initialBase={pullRequest.base}
+          onClose={() => setPullRequest(null)}
+          onConfirm={(head, base) => {
+            void createPullRequest(head, base);
+          }}
+        />
+      ) : null}
       <GitGraphRemotesDialog
         environmentId={environmentId}
         cwd={cwd}

@@ -2015,6 +2015,19 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  const resolveDefaultPrBase = Effect.fn("resolveDefaultPrBase")(function* (cwd: string) {
+    const defaultFromProvider = yield* sourceControlProvider(cwd).pipe(
+      Effect.flatMap((provider) => provider.getDefaultBranch({ cwd })),
+      Effect.orElseSucceed(() => null),
+    );
+    if (defaultFromProvider) return defaultFromProvider;
+    const defaultFromRemote = yield* gitCore.resolvePrimaryRemoteName(cwd).pipe(
+      Effect.flatMap((remoteName) => gitCore.resolveDefaultBranchName(cwd, remoteName)),
+      Effect.orElseSucceed(() => null),
+    );
+    return defaultFromRemote ?? "main";
+  });
+
   const resolvePrBase = Effect.fn("resolvePrBase")(function* (
     cwd: string,
     branch: string,
@@ -2059,23 +2072,8 @@ export const make = Effect.gen(function* () {
       }
     }
 
-    const defaultFromProvider = yield* sourceControlProvider(cwd).pipe(
-      Effect.flatMap((provider) => provider.getDefaultBranch({ cwd })),
-      Effect.orElseSucceed(() => null),
-    );
-    if (defaultFromProvider) {
-      return { baseBranch: defaultFromProvider, baseRef: defaultFromProvider };
-    }
-
-    const defaultFromRemote = yield* gitCore.resolvePrimaryRemoteName(cwd).pipe(
-      Effect.flatMap((remoteName) => gitCore.resolveDefaultBranchName(cwd, remoteName)),
-      Effect.orElseSucceed(() => null),
-    );
-    if (defaultFromRemote) {
-      return { baseBranch: defaultFromRemote, baseRef: defaultFromRemote };
-    }
-
-    return { baseBranch: "main", baseRef: "main" };
+    const baseBranch = yield* resolveDefaultPrBase(cwd);
+    return { baseBranch, baseRef: baseBranch };
   });
 
   const resolveBaseRangeRef = Effect.fn("resolveBaseRangeRef")(function* (
@@ -2265,16 +2263,74 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  const readBranchUpstream = Effect.fn("readBranchUpstream")(function* (
+    cwd: string,
+    branch: string,
+  ) {
+    const upstreamRef = yield* gitCore
+      .execute({
+        operation: "GitManager.readBranchUpstream",
+        cwd,
+        args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", `${branch}@{upstream}`],
+        allowNonZeroExit: true,
+      })
+      .pipe(
+        Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : "")),
+        Effect.orElseSucceed(() => ""),
+      );
+    if (upstreamRef.length === 0) {
+      return { upstreamRef: null, hasUpstream: false, aheadCount: 0 };
+    }
+    const aheadCount = yield* gitCore
+      .execute({
+        operation: "GitManager.readBranchUpstream.ahead",
+        cwd,
+        args: ["rev-list", "--count", `${upstreamRef}..refs/heads/${branch}`],
+      })
+      .pipe(
+        Effect.map((result) => Number.parseInt(result.stdout.trim(), 10) || 0),
+        Effect.orElseSucceed(() => 0),
+      );
+    return { upstreamRef, hasUpstream: true, aheadCount };
+  });
+
+  const pushBranch = Effect.fn("GitManager.pushBranch")(function* (cwd: string, branch: string) {
+    const configuredRemote = yield* readConfigValueNullable(cwd, `branch.${branch}.remote`);
+    const merge = yield* readConfigValueNullable(cwd, `branch.${branch}.merge`);
+    const tracked = configuredRemote !== null && configuredRemote !== "." && merge !== null;
+    const remote = tracked ? configuredRemote : yield* gitCore.resolvePrimaryRemoteName(cwd);
+    yield* gitCore.execute({
+      operation: "GitManager.pushBranch",
+      cwd,
+      args: [
+        "push",
+        ...(tracked ? [] : ["--set-upstream"]),
+        remote,
+        `refs/heads/${branch}:${tracked ? merge : `refs/heads/${branch}`}`,
+      ],
+      timeoutMs: 120_000,
+    });
+    yield* shareBranchBase(cwd, branch);
+    return { status: "pushed" as const, branch, ...(tracked ? {} : { setUpstream: true }) };
+  });
+
   const runPrStep = Effect.fn("runPrStep")(function* (
     settings: SourceControlTextGenerationSettings,
     cwd: string,
     fallbackBranch: string | null,
     threadId: ThreadId | undefined,
     emit: GitActionProgressEmitter,
+    /** A branch other than HEAD. */
+    headBranch?: string,
+    /** The branch it opens into. Omit it to use the default branch. */
+    requestedBaseBranch?: string,
   ) {
     const provider = yield* sourceControlProvider(cwd);
     const terms = sourceControlDefinitions.get(provider.kind).changeRequest;
-    const details = yield* gitCore.statusDetails(cwd);
+    const details =
+      headBranch === undefined
+        ? yield* gitCore.statusDetails(cwd)
+        : { branch: headBranch, ...(yield* readBranchUpstream(cwd, headBranch)) };
     const branch = details.branch ?? fallbackBranch;
     if (!branch) {
       return yield* new GitManagerError({
@@ -2296,8 +2352,19 @@ export const make = Effect.gen(function* () {
       upstreamRef: details.upstreamRef,
     });
 
+    if (requestedBaseBranch === branch) {
+      return yield* new GitManagerError({
+        operation: "runPrStep",
+        cwd,
+        detail: `Cannot open a pull request from ${branch} into itself.`,
+      });
+    }
+
     const existing = yield* findOpenPr(cwd, headContext);
-    if (existing) {
+    if (
+      existing &&
+      (requestedBaseBranch === undefined || existing.baseRefName === requestedBaseBranch)
+    ) {
       return {
         status: "opened_existing" as const,
         url: existing.url,
@@ -2308,19 +2375,25 @@ export const make = Effect.gen(function* () {
       };
     }
 
-    const { baseBranch, baseRef } = yield* resolvePrBase(
-      cwd,
-      branch,
-      details.upstreamRef,
-      headContext,
-    );
+    const { baseBranch, baseRef } =
+      requestedBaseBranch !== undefined
+        ? { baseBranch: requestedBaseBranch, baseRef: requestedBaseBranch }
+        : headBranch === undefined
+          ? yield* resolvePrBase(cwd, branch, details.upstreamRef, headContext)
+          : yield* resolveDefaultPrBase(cwd).pipe(
+              Effect.map((name) => ({ baseBranch: name, baseRef: name })),
+            );
     yield* emit({
       kind: "phase_started",
       phase: "pr",
       label: `Generating ${terms.shortLabel} content...`,
     });
     const baseRangeRef = yield* resolveBaseRangeRef(cwd, baseRef);
-    const rangeContext = yield* gitCore.readRangeContext(cwd, baseRangeRef);
+    const rangeContext = yield* gitCore.readRangeContext(
+      cwd,
+      baseRangeRef,
+      headBranch === undefined ? "HEAD" : `refs/heads/${headBranch}`,
+    );
     const policy = yield* resolveStylePolicy(cwd, settings);
     const changeRequestTemplate =
       settings.style.followChangeRequestTemplates && provider.readChangeRequestTemplate
@@ -2382,7 +2455,10 @@ export const make = Effect.gen(function* () {
         }).pipe(Effect.as(null)),
       ),
     );
-    if (!created) {
+    if (
+      !created ||
+      (requestedBaseBranch !== undefined && created.baseRefName !== requestedBaseBranch)
+    ) {
       return {
         status: "created" as const,
         baseBranch,
@@ -3131,14 +3207,29 @@ export const make = Effect.gen(function* () {
         GitRunStackedActionResult,
         GitManagerServiceError
       > {
+        const { headBranch, baseBranch } = input;
+        if (
+          (headBranch !== undefined || baseBranch !== undefined) &&
+          input.action !== "create_pr"
+        ) {
+          return yield* new GitManagerError({
+            operation: "runStackedAction",
+            cwd: input.cwd,
+            detail: "Head and base branches are only supported when creating a pull request.",
+          });
+        }
         const initialStatus = yield* gitCore.statusDetails(input.cwd);
+        const headUpstream =
+          headBranch === undefined
+            ? initialStatus
+            : yield* readBranchUpstream(input.cwd, headBranch);
         const wantsCommit = isCommitAction(input.action);
         const wantsPush =
           input.action === "push" ||
           input.action === "commit_push" ||
           input.action === "commit_push_pr" ||
           (input.action === "create_pr" &&
-            (!initialStatus.hasUpstream || initialStatus.aheadCount > 0));
+            (!headUpstream.hasUpstream || headUpstream.aheadCount > 0));
         const wantsPr = input.action === "create_pr" || input.action === "commit_push_pr";
 
         if (input.featureBranch && !wantsCommit) {
@@ -3160,14 +3251,19 @@ export const make = Effect.gen(function* () {
           phases,
         });
 
-        if (!input.featureBranch && wantsPush && !initialStatus.branch) {
+        if (
+          headBranch === undefined &&
+          !input.featureBranch &&
+          wantsPush &&
+          !initialStatus.branch
+        ) {
           return yield* new GitManagerError({
             operation: "runStackedAction",
             cwd: input.cwd,
             detail: "Cannot push from detached HEAD.",
           });
         }
-        if (!input.featureBranch && wantsPr && !initialStatus.branch) {
+        if (headBranch === undefined && !input.featureBranch && wantsPr && !initialStatus.branch) {
           return yield* new GitManagerError({
             operation: "runStackedAction",
             cwd: input.cwd,
@@ -3260,7 +3356,11 @@ export const make = Effect.gen(function* () {
               })
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("push"))),
-                Effect.flatMap(() => pushCurrentBranch(input.cwd, currentBranch)),
+                Effect.flatMap(() =>
+                  headBranch === undefined
+                    ? pushCurrentBranch(input.cwd, currentBranch)
+                    : pushBranch(input.cwd, headBranch),
+                ),
               )
           : { status: "skipped_not_requested" as const };
 
@@ -3280,6 +3380,8 @@ export const make = Effect.gen(function* () {
                     currentBranch,
                     input.threadId,
                     progress.emit,
+                    headBranch,
+                    baseBranch,
                   ),
                 ),
               )

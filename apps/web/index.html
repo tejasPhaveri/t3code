@@ -107,6 +107,20 @@
               chrome: "oklch(0.245899 0.019144 42.044)",
             },
           },
+          cursor: {
+            light: {
+              background: "oklch(0.991069 0 0)",
+              foreground: "oklch(0.191251 0 0)",
+              accent: "oklch(0.561171 0.136555 249.943)",
+              chrome: "oklch(0.991069 0 0)",
+            },
+            dark: {
+              background: "oklch(0.213423 0 0)",
+              foreground: "oklch(0.970151 0 0)",
+              accent: "oklch(0.560343 0.178969 255.586)",
+              chrome: "oklch(0.213423 0 0)",
+            },
+          },
           iris: {
             light: {
               background: "oklch(0.976531 0.003855 303.226)",
@@ -137,11 +151,13 @@
           "ocean",
           "ember",
           "iris",
+          "cursor",
           "t3-chat-dark",
           "t3-grove",
           "t3-ocean",
           "t3-ember",
           "t3-iris",
+          "t3-cursor",
         ];
         const setThemeColor = (color) => {
           for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
@@ -221,10 +237,11 @@
             "t3-ocean": "ocean",
             "t3-ember": "ember",
             "t3-iris": "iris",
+            "t3-cursor": "cursor",
           };
           const isLegacyT3ChatDark = storedTheme === "t3-chat-dark";
           const themeId =
-            storedTheme === null ? "" : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);
+            storedTheme === null ? "cursor" : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);
           const legacyMode = isLegacyT3ChatDark ? "dark" : null;
           const builtInModes = BUILT_IN_THEME_MODES[themeId] ?? null;
           const customTheme = builtInModes ? null : findCustomTheme(themeId);
@@ -240,7 +257,8 @@
             storedTheme === "dark" ||
             storedTheme === "system" ||
             themeModes !== null;
-          const theme = isKnownTheme && storedTheme ? storedTheme : "system";
+          const theme =
+            storedTheme === null ? "cursor" : isKnownTheme && storedTheme ? storedTheme : "system";
           const isThemed = isKnownTheme && themeModes !== null;
           const baseAppearance = customTheme ? customTheme.appearance : "light";
           const systemMode = prefersDark ? "dark" : "light";
@@ -256,9 +274,11 @@
               ? "system"
               : storedFollowSystem === "false"
                 ? preferenceMode
-                : theme === "system"
-                  ? "system"
-                  : preferenceMode;
+                : storedTheme === null
+                  ? "dark"
+                  : theme === "system"
+                    ? "system"
+                    : preferenceMode;
           // A valid mix half for the wanted appearance takes over: it decides
           // light vs dark even when the base theme cannot render that mode.
           // Mirrors the runtime's halves-aware resolveThemeAppearance.
@@ -348,7 +368,8 @@
           }
           // A resolved half is a selection even when the base theme is gone
           // (deleting the base leaves the mix pointing at a real theme).
-          const hasSelection = halfThemeId !== null || (isKnownTheme && storedTheme !== null);
+          const hasSelection =
+            halfThemeId !== null || (isKnownTheme && storedTheme !== null) || storedTheme === null;
           if (hasSelection) {
             document.documentElement.dataset.themeSelected = "true";
           } else {

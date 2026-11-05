@@ -6,11 +6,12 @@ This fork is installed as a packaged app at `/Applications/T3 Code.app`, next to
 
 `scripts/install-fork-mac.sh` sets `LSEnvironment` in the installed app's `Info.plist`:
 
-| Variable                       | Value                                       | Why                                                                                                                                    |
-| ------------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `T3CODE_HOME`                  | `~/.t3-fork`                                | Packaged builds otherwise use `~/.t3/userdata`, Nightly's live database.                                                               |
-| `T3CODE_DESKTOP_USER_DATA_DIR` | `~/Library/Application Support/t3code-fork` | Packaged builds otherwise share Nightly's `t3code-v2` Chromium profile, whose single-instance lock makes the second app quit silently. |
-| `T3CODE_DISABLE_AUTO_UPDATE`   | `1`                                         | The updater would replace the fork with upstream Beta.                                                                                 |
+| Variable                           | Value                                       | Why                                                                                                                                    |
+| ---------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `T3CODE_HOME`                      | `~/.t3-fork`                                | Packaged builds otherwise use `~/.t3/userdata`, Nightly's live database.                                                               |
+| `T3CODE_DESKTOP_USER_DATA_DIR`     | `~/Library/Application Support/t3code-fork` | Packaged builds otherwise share Nightly's `t3code-v2` Chromium profile, whose single-instance lock makes the second app quit silently. |
+| `T3CODE_DISABLE_AUTO_UPDATE`       | `1`                                         | The updater would replace the fork with upstream Beta.                                                                                 |
+| `T3CODE_STABLE_CONNECTION_CATALOG` | `1`                                         | Each install ad-hoc re-signs the app, which drops the Keychain identity safeStorage uses and cleared saved connections.                |
 
 `~/.t3-fork` was seeded with a copy of `~/.t3/userdata` while Nightly was closed. Data flows one way. Never write back to `~/.t3/userdata`.
 

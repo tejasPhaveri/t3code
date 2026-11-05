@@ -12,6 +12,8 @@ import {
 } from "@t3tools/client-runtime/platform";
 import type { PersistedSavedEnvironmentRecord } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
+import * as NodeCrypto from "node:crypto";
+
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -24,12 +26,25 @@ import * as Schema from "effect/Schema";
 
 import * as ElectronSafeStorage from "../electron/ElectronSafeStorage.ts";
 import * as DesktopSavedEnvironments from "../settings/DesktopSavedEnvironments.ts";
+import * as DesktopConfig from "./DesktopConfig.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
-const EncryptedConnectionCatalogDocument = Schema.Struct({
+const CATALOG_KEY_BYTES = 32;
+const CATALOG_IV_BYTES = 12;
+const CATALOG_TAG_BYTES = 16;
+
+const SafeStorageConnectionCatalogDocument = Schema.Struct({
   version: Schema.Literal(1),
   encryptedCatalog: Schema.String,
 });
+const StableConnectionCatalogDocument = Schema.Struct({
+  version: Schema.Literal(2),
+  encryptedCatalog: Schema.String,
+});
+const EncryptedConnectionCatalogDocument = Schema.Union([
+  SafeStorageConnectionCatalogDocument,
+  StableConnectionCatalogDocument,
+]);
 type EncryptedConnectionCatalogDocument = typeof EncryptedConnectionCatalogDocument.Type;
 
 const EncryptedConnectionCatalogDocumentJson = fromLenientJson(EncryptedConnectionCatalogDocument);
@@ -65,6 +80,8 @@ const DesktopConnectionCatalogStoreProtectionOperation = Schema.Literals([
   "check-encryption-availability",
   "encrypt-catalog",
   "decrypt-catalog",
+  "read-catalog-key",
+  "write-catalog-key",
 ]);
 
 export class DesktopConnectionCatalogStoreWriteError extends Schema.TaggedError<DesktopConnectionCatalogStoreWriteError>()(
@@ -181,6 +198,35 @@ function decodeSecretBytes(
     ),
   );
 }
+
+const concatBytes = (...parts: ReadonlyArray<Uint8Array>) => {
+  const output = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.byteLength;
+  }
+  return output;
+};
+
+const sealCatalog = (key: Uint8Array, catalog: string) => {
+  const iv = NodeCrypto.randomBytes(CATALOG_IV_BYTES);
+  const cipher = NodeCrypto.createCipheriv("aes-256-gcm", key, iv);
+  const ciphertext = Buffer.concat([cipher.update(catalog, "utf8"), cipher.final()]);
+  return concatBytes(iv, ciphertext, cipher.getAuthTag());
+};
+
+const openCatalog = (key: Uint8Array, payload: Uint8Array) => {
+  if (payload.byteLength < CATALOG_IV_BYTES + CATALOG_TAG_BYTES) {
+    throw new Error("connection catalog payload is too short");
+  }
+  const iv = payload.subarray(0, CATALOG_IV_BYTES);
+  const tag = payload.subarray(payload.byteLength - CATALOG_TAG_BYTES);
+  const ciphertext = payload.subarray(CATALOG_IV_BYTES, payload.byteLength - CATALOG_TAG_BYTES);
+  const decipher = NodeCrypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+};
 
 const readDocument = (
   fileSystem: FileSystem.FileSystem,
@@ -378,12 +424,15 @@ const migrateSavedEnvironmentRecords = Effect.fn(
 /** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
+  const config = yield* DesktopConfig.DesktopConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
   const random = yield* SecureRandom.SecureRandom;
   const savedEnvironments = yield* DesktopSavedEnvironments.DesktopSavedEnvironments;
   const catalogPath = path.join(environment.stateDir, "connection-catalog.json");
+  const catalogKeyPath = path.join(environment.stateDir, "connection-catalog.key");
+  const stableConnectionCatalog = config.stableConnectionCatalog;
   const encryptionAvailable = safeStorage.isEncryptionAvailable.pipe(
     Effect.mapError(
       (cause) =>
@@ -395,22 +444,79 @@ export const make = Effect.gen(function* () {
     ),
   );
 
+  const protectionError = (
+    operation: (typeof DesktopConnectionCatalogStoreProtectionOperation)["Type"],
+    cause: unknown,
+  ) =>
+    new DesktopConnectionCatalogStoreProtectionError({
+      operation,
+      catalogPath,
+      cause,
+    });
+
+  const loadCatalogKey = Effect.fn("desktop.connectionCatalogStore.loadCatalogKey")(function* (
+    create: boolean,
+  ) {
+    const existing = yield* fileSystem.readFile(catalogKeyPath).pipe(
+      Effect.map(Option.some),
+      Effect.catch((error) =>
+        error.reason._tag === "NotFound"
+          ? Effect.succeed(Option.none<Uint8Array>())
+          : Effect.fail(protectionError("read-catalog-key", error)),
+      ),
+    );
+    if (Option.isSome(existing)) {
+      if (existing.value.byteLength !== CATALOG_KEY_BYTES) {
+        return yield* protectionError(
+          "read-catalog-key",
+          new Error("connection catalog key has the wrong length"),
+        );
+      }
+      return existing.value;
+    }
+    if (!create) {
+      return yield* protectionError(
+        "read-catalog-key",
+        new Error("connection catalog key is missing"),
+      );
+    }
+    const key = NodeCrypto.randomBytes(CATALOG_KEY_BYTES);
+    yield* fileSystem
+      .makeDirectory(path.dirname(catalogKeyPath), { recursive: true })
+      .pipe(Effect.mapError((cause) => protectionError("write-catalog-key", cause)));
+    yield* fileSystem
+      .writeFile(catalogKeyPath, key)
+      .pipe(Effect.mapError((cause) => protectionError("write-catalog-key", cause)));
+    yield* fileSystem
+      .chmod(catalogKeyPath, 0o600)
+      .pipe(Effect.mapError((cause) => protectionError("write-catalog-key", cause)));
+    return key;
+  });
+
   const writeCatalog = Effect.fn("desktop.connectionCatalogStore.writeCatalog")(function* (
     catalog: string,
   ) {
-    const encryptedCatalog = Base64.encode(
-      yield* safeStorage.encryptString(catalog).pipe(
-        Effect.mapError(
-          (cause) =>
-            new DesktopConnectionCatalogStoreProtectionError({
-              operation: "encrypt-catalog",
-              catalogPath,
-              cause,
-            }),
-        ),
-      ),
-    );
     const suffix = (yield* random.uuidV4()).replace(/-/g, "");
+    if (stableConnectionCatalog) {
+      const key = yield* loadCatalogKey(true);
+      const sealed = yield* Effect.try({
+        try: () => sealCatalog(key, catalog),
+        catch: (cause) => protectionError("encrypt-catalog", cause),
+      });
+      yield* writeDocument({
+        fileSystem,
+        path,
+        catalogPath,
+        document: { version: 2, encryptedCatalog: Base64.encode(sealed) },
+        suffix,
+      });
+      return;
+    }
+    const encryptedCatalog = Base64.encode(
+      yield* safeStorage
+        .encryptString(catalog)
+        .pipe(Effect.mapError((cause) => protectionError("encrypt-catalog", cause))),
+    );
     yield* writeDocument({
       fileSystem,
       path,
@@ -461,33 +567,53 @@ export const make = Effect.gen(function* () {
     return Option.some(encoded);
   });
 
+  const decryptSafeStorageCatalog = (encoded: string) =>
+    decodeSecretBytes(catalogPath, encoded).pipe(
+      Effect.flatMap((encryptedCatalog) =>
+        safeStorage
+          .decryptString(encryptedCatalog)
+          .pipe(Effect.mapError((cause) => protectionError("decrypt-catalog", cause))),
+      ),
+    );
+
+  const decryptStableCatalog = Effect.fn("desktop.connectionCatalogStore.decryptStableCatalog")(
+    function* (encoded: string) {
+      const key = yield* loadCatalogKey(false);
+      const payload = yield* decodeSecretBytes(catalogPath, encoded);
+      return yield* Effect.try({
+        try: () => openCatalog(key, payload),
+        catch: (cause) => protectionError("decrypt-catalog", cause),
+      });
+    },
+  );
+
   return DesktopConnectionCatalogStore.of({
     get: Effect.gen(function* () {
       const document = yield* readDocument(fileSystem, catalogPath);
       if (Option.isNone(document)) {
         return yield* migrateLegacyCatalog;
       }
+      if (document.value.version === 2) {
+        return Option.some(yield* decryptStableCatalog(document.value.encryptedCatalog));
+      }
+      if (stableConnectionCatalog) {
+        const decrypted = yield* decryptSafeStorageCatalog(document.value.encryptedCatalog);
+        yield* writeCatalog(decrypted).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("Could not rewrite the connection catalog with the stable key.", {
+              cause,
+            }),
+          ),
+        );
+        return Option.some(decrypted);
+      }
       if (!(yield* encryptionAvailable)) {
         return Option.none<string>();
       }
-      const decrypted = yield* decodeSecretBytes(catalogPath, document.value.encryptedCatalog).pipe(
-        Effect.flatMap((encryptedCatalog) =>
-          safeStorage.decryptString(encryptedCatalog).pipe(
-            Effect.mapError(
-              (cause) =>
-                new DesktopConnectionCatalogStoreProtectionError({
-                  operation: "decrypt-catalog",
-                  catalogPath,
-                  cause,
-                }),
-            ),
-          ),
-        ),
-      );
-      return Option.some(decrypted);
+      return Option.some(yield* decryptSafeStorageCatalog(document.value.encryptedCatalog));
     }).pipe(Effect.withSpan("desktop.connectionCatalogStore.get")),
     set: Effect.fn("desktop.connectionCatalogStore.set")(function* (catalog) {
-      if (!(yield* encryptionAvailable)) {
+      if (!stableConnectionCatalog && !(yield* encryptionAvailable)) {
         return false;
       }
       yield* writeCatalog(catalog);

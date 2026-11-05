@@ -59,6 +59,8 @@ export const DesktopConfig = Config.all({
   desktopLauncherPath: trimmedString("T3CODE_DESKTOP_LAUNCHER_PATH"),
   appImagePath: trimmedString("APPIMAGE"),
   disableAutoUpdate: optionalBoolean("T3CODE_DISABLE_AUTO_UPDATE"),
+  // Ad-hoc re-signing drops the Keychain ACL safeStorage is bound to.
+  stableConnectionCatalog: optionalBoolean("T3CODE_STABLE_CONNECTION_CATALOG"),
   mockUpdates: optionalBoolean("T3CODE_DESKTOP_MOCK_UPDATES"),
   mockUpdateServerPort: Config.Port("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(
     Config.withDefault(3000),

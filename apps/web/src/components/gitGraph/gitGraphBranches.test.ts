@@ -6,8 +6,10 @@ import {
   branchFilterOptions,
   branchFilterRefs,
   DEFAULT_BRANCH_FILTER,
+  defaultPullRequestBase,
   describeBranchFilter,
   globToRegExp,
+  localBranchNames,
   refMatchesGlob,
 } from "./gitGraphBranches";
 
@@ -23,6 +25,22 @@ const refs: GitGraphRef[] = [
   },
   { kind: "tag", fullName: "refs/tags/v1", name: "v1", hash: "aaaa" },
 ];
+
+describe("defaultPullRequestBase", () => {
+  const branches = ["feature/login", "main", "release"];
+
+  it("opens a feature branch into the checked-out branch", () => {
+    expect(defaultPullRequestBase("feature/login", branches, "release")).toBe("release");
+  });
+
+  it("opens the default branch into another branch instead of itself", () => {
+    expect(defaultPullRequestBase("main", branches, "main")).toBe("feature/login");
+  });
+
+  it("lists only local branches", () => {
+    expect(localBranchNames(refs)).toEqual(["feature/login", "main"]);
+  });
+});
 
 describe("globToRegExp", () => {
   it("keeps a star inside one path segment and a double star across segments", () => {

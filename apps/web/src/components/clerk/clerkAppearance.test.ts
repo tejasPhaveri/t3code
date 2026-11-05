@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  CURSOR_THEME,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
@@ -46,6 +47,7 @@ const builtInThemeModes = [
   OCEAN_THEME,
   EMBER_THEME,
   IRIS_THEME,
+  CURSOR_THEME,
 ].flatMap((theme) =>
   [theme.colors, theme.variants?.dark].filter((colors): colors is ThemeColors => !!colors),
 );

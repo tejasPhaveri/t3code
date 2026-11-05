@@ -2,12 +2,15 @@ import type { GitGraphAction, GitGraphWorktree, GitGraphWorktreeFile } from "@t3
 import { ChevronDown, ChevronRight, FileText, GitBranch, Minus, Plus, Undo2 } from "lucide-react";
 import { useState } from "react";
 
+import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
 import { resolveDiffPathForWorkspace } from "~/diffFileActions";
+import { useRenderedAppearance } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
 
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
-import { buildFileTree, type FileTreeNode } from "./fileTree";
+import { buildFileTree, dominantFileStatus, type FileTreeNode } from "./fileTree";
+import { GIT_STATUS_CLASS, GIT_STATUS_DOT, GIT_STATUS_LETTER } from "./gitDecoration";
 import { useSourceControlLayoutStore, useSourceControlOpen } from "./sourceControlLayoutStore";
 import { confirmGitGraphAction } from "./useGitGraphAction";
 
@@ -15,28 +18,6 @@ type RunAction = (
   action: GitGraphAction,
   options?: { readonly worktreePath?: string; readonly success?: string },
 ) => Promise<boolean>;
-
-const STATUS_LETTER: Record<GitGraphWorktreeFile["status"], string> = {
-  added: "A",
-  modified: "M",
-  deleted: "D",
-  renamed: "R",
-  copied: "C",
-  "type-changed": "T",
-  untracked: "U",
-  conflicted: "!",
-};
-
-const STATUS_CLASS: Record<GitGraphWorktreeFile["status"], string> = {
-  added: "text-success",
-  modified: "text-warning",
-  deleted: "text-destructive",
-  renamed: "text-info",
-  copied: "text-info",
-  "type-changed": "text-warning",
-  untracked: "text-success",
-  conflicted: "text-destructive",
-};
 
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1) || path;
 
@@ -97,6 +78,8 @@ function FileTreeRows(props: {
   readonly nodes: readonly FileTreeNode[];
   readonly depth: number;
   readonly staged: boolean;
+  readonly theme: "light" | "dark";
+  readonly statusByPath: ReadonlyMap<string, GitGraphWorktreeFile["status"]>;
   readonly open: FileOpeners | null;
   readonly isCollapsed: (key: string) => boolean;
   readonly onToggle: (key: string) => void;
@@ -108,13 +91,42 @@ function FileTreeRows(props: {
   return props.nodes.map((node) => {
     const isCollapsed = props.isCollapsed(node.key);
     const { file } = node;
+    const folderStatus = file
+      ? null
+      : dominantFileStatus(
+          node.filePaths.flatMap((path) => {
+            const status = props.statusByPath.get(path);
+            return status === undefined ? [] : [status];
+          }),
+        );
+    const label = (
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        {file ? (
+          <PierreEntryIcon
+            pathValue={file.path}
+            kind="file"
+            theme={props.theme}
+            className="size-3.5"
+          />
+        ) : null}
+        <span
+          className={cn(
+            "min-w-0 truncate",
+            file && GIT_STATUS_CLASS[file.status],
+            file?.status === "deleted" && "line-through",
+          )}
+        >
+          {node.name}
+        </span>
+      </span>
+    );
     return (
       <div key={node.key}>
         <div
-          className="group flex h-6 items-center gap-1 pr-1 hover:bg-accent/60"
+          className="group flex h-6 items-center gap-1 pr-2 hover:bg-accent/60"
           style={{ paddingLeft: 8 + props.depth * 12 }}
         >
-          {node.file ? (
+          {file ? (
             <span className="w-3.5 shrink-0" />
           ) : (
             <button
@@ -133,23 +145,21 @@ function FileTreeRows(props: {
           {file && open ? (
             <button
               type="button"
-              className={cn(
-                "min-w-0 flex-1 truncate text-left",
-                file.status === "deleted" && "line-through opacity-70",
-              )}
+              className="flex min-w-0 flex-1 items-center text-left"
               onClick={() => open.diff(file.path)}
             >
-              {node.name}
+              {label}
             </button>
+          ) : file ? (
+            label
           ) : (
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate",
-                node.file?.status === "deleted" && "line-through opacity-70",
-              )}
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 items-center text-left"
+              onClick={() => props.onToggle(node.key)}
             >
-              {node.name}
-            </span>
+              {label}
+            </button>
           )}
           <span className="hidden shrink-0 items-center group-hover:flex">
             {file && open && file.status !== "deleted" ? (
@@ -165,15 +175,20 @@ function FileTreeRows(props: {
               onDiscard={props.onDiscard}
             />
           </span>
-          {node.file ? (
+          {file ? (
             <span
               className={cn(
-                "w-3 shrink-0 text-center font-mono font-semibold",
-                STATUS_CLASS[node.file.status],
+                "w-3 shrink-0 text-center font-mono text-2xs font-semibold",
+                GIT_STATUS_CLASS[file.status],
               )}
             >
-              {STATUS_LETTER[node.file.status]}
+              {GIT_STATUS_LETTER[file.status]}
             </span>
+          ) : folderStatus ? (
+            <span
+              className={cn("size-1.5 shrink-0 rounded-full", GIT_STATUS_DOT[folderStatus])}
+              aria-hidden
+            />
           ) : null}
         </div>
         {!node.file && !isCollapsed ? (
@@ -196,9 +211,11 @@ function ChangeGroup(props: {
   readonly onDiscard: (paths: readonly string[]) => void;
 }) {
   const [open, setOpen] = useSourceControlOpen(props.layoutKey, true);
+  const theme = useRenderedAppearance();
   const openByKey = useSourceControlLayoutStore((state) => state.openByKey);
   const setLayoutOpen = useSourceControlLayoutStore((state) => state.setOpen);
   const folderKey = (key: string) => `${props.layoutKey}/${key}`;
+  const statusByPath = new Map(props.files.map((file) => [file.path, file.status]));
   if (props.files.length === 0) return null;
   const allPaths = props.files.map((file) => file.path);
   return (
@@ -225,7 +242,7 @@ function ChangeGroup(props: {
             onDiscard={props.onDiscard}
           />
         </span>
-        <span className="shrink-0 rounded-full bg-muted px-1.5 text-2xs leading-4 text-muted-foreground tabular-nums">
+        <span className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-info px-1 text-3xs font-semibold text-white tabular-nums">
           {props.files.length}
         </span>
       </div>
@@ -234,6 +251,8 @@ function ChangeGroup(props: {
           nodes={buildFileTree(props.files)}
           depth={1}
           staged={props.staged}
+          theme={theme}
+          statusByPath={statusByPath}
           open={props.open}
           isCollapsed={(key) => openByKey[folderKey(key)] === false}
           onToggle={(key) => setLayoutOpen(folderKey(key), openByKey[folderKey(key)] === false)}

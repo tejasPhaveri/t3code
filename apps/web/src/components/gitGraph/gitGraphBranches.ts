@@ -11,6 +11,32 @@ export interface BranchFilterOption {
   readonly checkedOut: boolean;
 }
 
+const DEFAULT_PULL_REQUEST_BASES = ["main", "master", "trunk"] as const;
+
+/** Local branches a pull request can use, tags and remote-tracking names left out. */
+export function localBranchNames(refs: readonly GitGraphRef[]): string[] {
+  return refs
+    .filter((ref) => ref.kind === "head")
+    .map((ref) => ref.name)
+    .toSorted((left, right) => left.localeCompare(right));
+}
+
+/**
+ * The branch a pull request opens into. The checked-out branch wins when it is a real other
+ * side, then a usual default name, then whatever local branch is left.
+ */
+export function defaultPullRequestBase(
+  head: string,
+  branches: readonly string[],
+  currentBranch: string | null,
+): string {
+  const others = branches.filter((name) => name !== head);
+  if (currentBranch !== null && currentBranch !== head && others.includes(currentBranch)) {
+    return currentBranch;
+  }
+  return DEFAULT_PULL_REQUEST_BASES.find((name) => others.includes(name)) ?? others[0] ?? "";
+}
+
 /**
  * Git Graph's Branches dropdown. A custom glob pattern matches against `fullName` without its
  * `refs/heads/` or `refs/remotes/` prefix, so `feature/*` reads the way a reader types it.

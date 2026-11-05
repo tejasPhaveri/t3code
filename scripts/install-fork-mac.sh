@@ -34,7 +34,7 @@ fi
 # CFBundleName must keep matching the Helper app names, so only the id and display name change.
 plutil -replace CFBundleIdentifier -string "com.t3tools.t3code.fork" "$PLIST"
 plutil -replace CFBundleDisplayName -string "T3 Code" "$PLIST"
-plutil -replace LSEnvironment -json "$(printf '{"T3CODE_HOME":"%s","T3CODE_DESKTOP_USER_DATA_DIR":"%s","T3CODE_DISABLE_AUTO_UPDATE":"1"}' "$FORK_HOME" "$FORK_PROFILE")" "$PLIST"
+plutil -replace LSEnvironment -json "$(printf '{"T3CODE_HOME":"%s","T3CODE_DESKTOP_USER_DATA_DIR":"%s","T3CODE_DISABLE_AUTO_UPDATE":"1","T3CODE_STABLE_CONNECTION_CATALOG":"1"}' "$FORK_HOME" "$FORK_PROFILE")" "$PLIST"
 
 xattr -cr "$APP"
 codesign --force --deep --sign - "$APP"

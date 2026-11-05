@@ -11,6 +11,7 @@ import {
   T3_CHAT_THEME,
   EMBER_THEME,
   GROVE_THEME,
+  CURSOR_THEME,
   IRIS_THEME,
   OCEAN_THEME,
   THEME_APPEARANCE_MODE_STORAGE_KEY,
@@ -110,7 +111,7 @@ function runtimeResolvedAppearance(
   invalidateCustomThemes();
   try {
     const raw = storage[THEME_STORAGE_KEY] ?? null;
-    const theme = raw !== null && isKnownThemePreference(raw) ? raw : "system";
+    const theme = raw === null ? "cursor" : isKnownThemePreference(raw) ? raw : "system";
     const followRaw = storage[THEME_FOLLOW_SYSTEM_STORAGE_KEY] ?? null;
     const appearanceRaw = storage[THEME_APPEARANCE_MODE_STORAGE_KEY] ?? null;
     const appearanceMode =
@@ -120,9 +121,11 @@ function runtimeResolvedAppearance(
           ? "system"
           : followRaw === "false"
             ? null
-            : theme === "system"
-              ? "system"
-              : null;
+            : raw === null
+              ? "dark"
+              : theme === "system"
+                ? "system"
+                : null;
     const followSystem = appearanceMode === "system";
     return resolveThemeAppearance(theme, prefersDark, followSystem, appearanceMode ?? undefined);
   } finally {
@@ -152,6 +155,11 @@ describe("index.html boot script", () => {
     prefersDark: boolean;
   }> = [
     { name: "no stored preference on a dark OS", storage: {}, prefersDark: true },
+    {
+      name: "no stored preference on a light OS stays Cursor Dark",
+      storage: {},
+      prefersDark: false,
+    },
     {
       name: "T3 Chat follows a dark OS",
       storage: { [THEME_STORAGE_KEY]: "t3-chat", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
@@ -254,6 +262,16 @@ describe("index.html boot script", () => {
     expect(boot.isDark).toBe(runtimeResolvedAppearance(storage, prefersDark) === "dark");
   });
 
+  it("opens an untouched install in Cursor Dark", () => {
+    const boot = runBootScript({ storage: {}, prefersDark: false });
+    expect(boot.isDark).toBe(true);
+    expect(boot.themeId).toBe("cursor");
+    expect(boot.themeSelected).toBe("true");
+    expect(boot.bootVariables["--boot-background"]).toBe(
+      getThemeColorsForMode(CURSOR_THEME, "dark")!.canvas,
+    );
+  });
+
   it("accepts exponent-form OKLCH before the runtime mounts", () => {
     const colors = {
       canvas: "oklch(9.5e-1 1e-2 2.8e2)",
@@ -284,7 +302,14 @@ describe("index.html boot script", () => {
   });
 
   it("keeps every built-in boot splash in sync with the real palettes", () => {
-    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
+    for (const theme of [
+      T3_CHAT_THEME,
+      GROVE_THEME,
+      OCEAN_THEME,
+      EMBER_THEME,
+      IRIS_THEME,
+      CURSOR_THEME,
+    ]) {
       expect(theme.appearance).toBe("light");
       for (const mode of ["light", "dark"] as const) {
         const colors = getThemeColorsForMode(theme, mode);

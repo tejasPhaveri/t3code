@@ -2944,9 +2944,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   const readRangeContext: GitVcsDriver.GitVcsDriver["Service"]["readRangeContext"] = Effect.fn(
     "readRangeContext",
-  )(function* (cwd, baseRef) {
-    const commitRange = `${baseRef}..HEAD`;
-    const diffRange = `${baseRef}...HEAD`;
+  )(function* (cwd, baseRef, headRef = "HEAD") {
+    const commitRange = `${baseRef}..${headRef}`;
+    const diffRange = `${baseRef}...${headRef}`;
     const [commitSummary, diffSummary, diffPatch] = yield* Effect.all(
       [
         runGitStdoutWithOptions(

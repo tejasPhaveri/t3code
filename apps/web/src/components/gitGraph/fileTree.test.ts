@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildFileTree, type FileTreeNode } from "./fileTree";
+import { buildFileTree, dominantFileStatus, type FileTreeNode } from "./fileTree";
 
 const outline = (nodes: readonly FileTreeNode[]): unknown[] =>
   nodes.map((node) => (node.file ? node.name : { [node.name]: outline(node.children) }));
@@ -27,5 +27,12 @@ describe("buildFileTree", () => {
     ]);
 
     expect(apps?.filePaths.toSorted()).toEqual(["apps/server/b.ts", "apps/web/a.ts"]);
+  });
+
+  it("picks the strongest git decoration for a folder", () => {
+    expect(dominantFileStatus(["added", "untracked"])).toBe("added");
+    expect(dominantFileStatus(["added", "modified"])).toBe("modified");
+    expect(dominantFileStatus(["modified", "conflicted", "deleted"])).toBe("conflicted");
+    expect(dominantFileStatus([])).toBeNull();
   });
 });

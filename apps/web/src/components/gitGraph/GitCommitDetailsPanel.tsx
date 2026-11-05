@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
+import { useRenderedAppearance } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
 import { gitGraphEnvironment } from "~/state/gitGraph";
 import { useEnvironmentQuery } from "~/state/query";
@@ -28,6 +30,7 @@ import { Button } from "../ui/button";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { GitCommitMessage } from "./GitCommitMessage";
+import { GIT_STATUS_CLASS, GIT_STATUS_LETTER } from "./gitDecoration";
 import { GitGraphPatchView } from "./GitGraphPatchView";
 import { formatGitGraphDateTime, formatGitGraphRelative, shortHash } from "./gitGraphFormat";
 
@@ -37,28 +40,6 @@ const ADDITIONS = (files: readonly GitGraphDiffFile[]) =>
   files.reduce((total, file) => total + file.additions, 0);
 const DELETIONS = (files: readonly GitGraphDiffFile[]) =>
   files.reduce((total, file) => total + file.deletions, 0);
-
-const STATUS_LETTER: Record<GitGraphDiffFile["status"], string> = {
-  added: "A",
-  modified: "M",
-  deleted: "D",
-  renamed: "R",
-  copied: "C",
-  "type-changed": "T",
-  untracked: "U",
-  conflicted: "!",
-};
-
-const STATUS_CLASS: Record<GitGraphDiffFile["status"], string> = {
-  added: "text-success",
-  modified: "text-warning",
-  deleted: "text-destructive",
-  renamed: "text-info",
-  copied: "text-info",
-  "type-changed": "text-warning",
-  untracked: "text-success",
-  conflicted: "text-destructive",
-};
 
 const SIGNATURE_LABEL: Record<string, { readonly label: string; readonly className: string }> = {
   G: { label: "Good signature", className: "text-success" },
@@ -217,6 +198,7 @@ function CommitFileRow(props: {
   readonly onOpenFile: () => void;
 }) {
   const { file } = props;
+  const theme = useRenderedAppearance();
   return (
     <div
       className={cn(
@@ -226,24 +208,29 @@ function CommitFileRow(props: {
     >
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-1 text-left"
+        className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         onClick={props.onToggle}
       >
+        <PierreEntryIcon pathValue={file.path} kind="file" theme={theme} className="size-3.5" />
         <span
           className={cn(
-            "w-3 shrink-0 text-center font-mono font-semibold",
-            STATUS_CLASS[file.status],
+            "min-w-0 flex-1 truncate",
+            GIT_STATUS_CLASS[file.status],
+            file.status === "deleted" && "line-through",
           )}
-        >
-          {STATUS_LETTER[file.status]}
-        </span>
-        <span
-          className={cn("min-w-0 truncate", file.status === "deleted" && "line-through opacity-70")}
         >
           {file.oldPath !== null && file.oldPath !== file.path ? (
             <span className="text-muted-foreground">{file.oldPath} → </span>
           ) : null}
           {file.path}
+        </span>
+        <span
+          className={cn(
+            "w-3 shrink-0 text-center font-mono text-2xs font-semibold",
+            GIT_STATUS_CLASS[file.status],
+          )}
+        >
+          {GIT_STATUS_LETTER[file.status]}
         </span>
       </button>
       <span className="flex shrink-0 items-center gap-1 tabular-nums">

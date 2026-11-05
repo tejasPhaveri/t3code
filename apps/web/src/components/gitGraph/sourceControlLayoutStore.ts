@@ -7,6 +7,8 @@ import { resolveSharedWindowStorage } from "~/lib/storage";
 const MAX_ENTRIES = 500;
 
 export interface GitGraphColumnWidths {
+  /** The source control sidebar beside the graph. */
+  readonly sidebar: number;
   /** The most the graph column takes; `null` fits every lane. */
   readonly graph: number | null;
   /** The least the description takes; it grows into any room left over. */
@@ -17,6 +19,7 @@ export interface GitGraphColumnWidths {
 export type GitGraphColumn = keyof GitGraphColumnWidths;
 
 const DEFAULT_GIT_GRAPH_COLUMN_WIDTHS: GitGraphColumnWidths = {
+  sidebar: 288,
   graph: null,
   description: 320,
   author: 128,
@@ -64,6 +67,15 @@ export const useSourceControlLayoutStore = create<SourceControlLayoutStoreState>
         resolveSharedWindowStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
       partialize: (state) => ({ openByKey: state.openByKey, columnWidths: state.columnWidths }),
+      // Widths saved before a column existed keep the defaults for the new ones.
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<SourceControlLayoutStoreState> | undefined;
+        return {
+          ...current,
+          ...saved,
+          columnWidths: { ...current.columnWidths, ...saved?.columnWidths },
+        };
+      },
     },
   ),
 );

@@ -334,6 +334,7 @@ export class GitVcsDriver extends Context.Service<
     readonly readRangeContext: (
       cwd: string,
       baseRef: string,
+      headRef?: string,
     ) => Effect.Effect<GitRangeContext, GitCommandError>;
     readonly getReviewBranchCommits: (
       input: ReviewBranchCommitsInput,

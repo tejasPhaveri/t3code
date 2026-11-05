@@ -572,6 +572,8 @@ function runStackedAction(
     actionId?: string;
     commitMessage?: string;
     featureBranch?: boolean;
+    headBranch?: string;
+    baseBranch?: string;
     filePaths?: readonly string[];
   },
   options?: Parameters<GitManager.GitManager["Service"]["runStackedAction"]>[1],
@@ -3886,6 +3888,104 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           ),
         ).toBe(true);
       }),
+  );
+
+  it.effect("pushes a branch that is not checked out and opens it into the default branch", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["branch", "-m", "main", "trunk"]);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "trunk"]);
+      yield* runGit(repoDir, ["checkout", "-b", "release"]);
+      yield* runGit(repoDir, ["checkout", "-b", "feature/elsewhere"]);
+      yield* runGit(repoDir, [
+        "config",
+        "branch.feature/elsewhere.t3-merge-base-ref",
+        "refs/heads/release",
+      ]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "elsewhere.txt"), "elsewhere\n");
+      yield* runGit(repoDir, ["add", "elsewhere.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Elsewhere commit"]);
+      yield* runGit(repoDir, ["checkout", "trunk"]);
+      let generatedSummary = "";
+      const { manager, providerCalls } = yield* makeManager({
+        providerScenario: { defaultBranch: "trunk", prListSequence: [[], []] },
+        textGeneration: {
+          generatePrContent: (input) => {
+            generatedSummary = input.commitSummary;
+            return Effect.succeed({ title: "Elsewhere PR", body: "Elsewhere body" });
+          },
+        },
+      });
+
+      const result = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "create_pr",
+        headBranch: "feature/elsewhere",
+      });
+
+      expect(result.push.status).toBe("pushed");
+      expect(result.pr.status).toBe("created");
+      expect(generatedSummary).toContain("Elsewhere commit");
+      expect(
+        created(providerCalls).some(
+          (call) => call.baseRefName === "trunk" && call.headSelector === "feature/elsewhere",
+        ),
+      ).toBe(true);
+      expect(
+        (yield* runGit(repoDir, ["ls-remote", "--heads", "origin", "feature/elsewhere"])).stdout,
+      ).toContain("refs/heads/feature/elsewhere");
+      expect((yield* runGit(repoDir, ["branch", "--show-current"])).stdout.trim()).toBe("trunk");
+    }),
+  );
+
+  it.effect("opens the default branch into a chosen branch", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      yield* runGit(repoDir, ["branch", "-m", "main", "trunk"]);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["checkout", "-b", "release"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "release"]);
+      yield* runGit(repoDir, ["checkout", "trunk"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "trunk.txt"), "trunk\n");
+      yield* runGit(repoDir, ["add", "trunk.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Trunk commit"]);
+      const { manager, providerCalls } = yield* makeManager({
+        providerScenario: {
+          defaultBranch: "trunk",
+          prListOtherwise: [
+            {
+              number: 7,
+              title: "Trunk into docs",
+              url: "https://github.com/pingdotgg/codething-mvp/pull/7",
+              baseRefName: "docs",
+              headRefName: "trunk",
+              state: "open",
+            },
+          ],
+        },
+      });
+
+      const result = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "create_pr",
+        headBranch: "trunk",
+        baseBranch: "release",
+      });
+
+      expect(result.pr.status).toBe("created");
+      expect(result.pr.baseBranch).toBe("release");
+      expect(result.pr).not.toHaveProperty("number");
+      expect(
+        created(providerCalls).some(
+          (call) => call.baseRefName === "release" && call.headSelector === "trunk",
+        ),
+      ).toBe(true);
+    }),
   );
 
   it.effect("generates PR content from the created worktree's selected remote base", () =>

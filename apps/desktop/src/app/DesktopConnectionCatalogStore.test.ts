@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ConnectionCatalogDocument } from "@t3tools/client-runtime/platform";
 import { EnvironmentId, type PersistedSavedEnvironmentRecord } from "@t3tools/contracts";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Base64 from "effect/encoding/Base64";
 import * as FileSystem from "effect/FileSystem";
@@ -88,6 +89,10 @@ function layerFor(
     Layer.provideMerge(layerDependencies),
   );
 }
+
+const stableCatalogProvider = ConfigProvider.fromEnv({
+  env: { T3CODE_STABLE_CONNECTION_CATALOG: "true" },
+});
 
 const withStore = <A, E, R>(
   effect: Effect.Effect<A, E, R | DesktopConnectionCatalogStore.DesktopConnectionCatalogStore>,
@@ -298,6 +303,99 @@ describe("DesktopConnectionCatalogStore", () => {
       assert.notEqual(error.message, decryptError.message);
       yield* Ref.set(failDecrypt, false);
       assert.deepStrictEqual(yield* store.get, Option.some('{"schemaVersion":1,"targets":[]}'));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect("keeps a stable catalog readable when secure storage is unavailable", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-connection-catalog-test-",
+      });
+      const catalog = '{"schemaVersion":1,"targets":[{"id":"kept"}]}';
+      const first = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, false)),
+      );
+      assert.isTrue(yield* first.set(catalog));
+
+      const catalogPath = path.join(baseDir, "userdata", "connection-catalog.json");
+      const stored = JSON.parse(yield* fileSystem.readFileString(catalogPath)) as {
+        version: number;
+      };
+      assert.equal(stored.version, 2);
+
+      const second = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, false)),
+      );
+      assert.deepStrictEqual(yield* second.get, Option.some(catalog));
+    }).pipe(
+      Effect.provideService(ConfigProvider.ConfigProvider, stableCatalogProvider),
+      Effect.provide(NodeServices.layer),
+      Effect.scoped,
+    ),
+  );
+
+  it.effect("rewrites a keychain catalog onto the stable key", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-connection-catalog-test-",
+      });
+      const catalog = '{"schemaVersion":1,"targets":[{"id":"moved"}]}';
+      const keychain = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, true)),
+      );
+      assert.isTrue(yield* keychain.set(catalog));
+
+      const failDecrypt = yield* Ref.make(false);
+      const stable = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, true, failDecrypt)),
+        Effect.provideService(ConfigProvider.ConfigProvider, stableCatalogProvider),
+      );
+      assert.deepStrictEqual(yield* stable.get, Option.some(catalog));
+      const catalogPath = path.join(baseDir, "userdata", "connection-catalog.json");
+      const stored = JSON.parse(yield* fileSystem.readFileString(catalogPath)) as {
+        version: number;
+      };
+      assert.equal(stored.version, 2);
+
+      yield* Ref.set(failDecrypt, true);
+      const resigned = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, true, failDecrypt)),
+        Effect.provideService(ConfigProvider.ConfigProvider, stableCatalogProvider),
+      );
+      assert.deepStrictEqual(yield* resigned.get, Option.some(catalog));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect("leaves a keychain catalog in place when the new build cannot decrypt it", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-desktop-connection-catalog-test-",
+      });
+      const keychain = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, true)),
+      );
+      assert.isTrue(yield* keychain.set('{"schemaVersion":1,"targets":[]}'));
+      const catalogPath = path.join(baseDir, "userdata", "connection-catalog.json");
+      const before = yield* fileSystem.readFileString(catalogPath);
+
+      const failDecrypt = yield* Ref.make(true);
+      const resigned = yield* DesktopConnectionCatalogStore.DesktopConnectionCatalogStore.pipe(
+        Effect.provide(layerFor(baseDir, true, failDecrypt)),
+        Effect.provideService(ConfigProvider.ConfigProvider, stableCatalogProvider),
+      );
+      const error = yield* resigned.get.pipe(Effect.flip);
+      assert.instanceOf(
+        error,
+        DesktopConnectionCatalogStore.DesktopConnectionCatalogStoreProtectionError,
+      );
+      assert.equal(error.operation, "decrypt-catalog");
+      assert.equal(yield* fileSystem.readFileString(catalogPath), before);
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 });

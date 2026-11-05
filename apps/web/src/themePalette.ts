@@ -10,6 +10,7 @@ import {
   BUILT_IN_THEMES,
   EMBER_THEME,
   GROVE_THEME,
+  CURSOR_THEME,
   IRIS_THEME,
   OCEAN_THEME,
   T3_CHAT_THEME,
@@ -32,7 +33,15 @@ import {
 import { appAtomRegistry, subscribeAtomChanges } from "./rpc/atomRegistry";
 import { primaryServerEnvironmentThemesAtom } from "./state/server";
 
-export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, T3_CHAT_THEME, THEME_COLOR_ROLES };
+export {
+  CURSOR_THEME,
+  EMBER_THEME,
+  GROVE_THEME,
+  IRIS_THEME,
+  OCEAN_THEME,
+  T3_CHAT_THEME,
+  THEME_COLOR_ROLES,
+};
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
 const T3_CHAT_THEME_ID = "t3-chat" as const;
@@ -40,6 +49,7 @@ const GROVE_THEME_ID = "grove" as const;
 const OCEAN_THEME_ID = "ocean" as const;
 const EMBER_THEME_ID = "ember" as const;
 const IRIS_THEME_ID = "iris" as const;
+const CURSOR_THEME_ID = "cursor" as const;
 export const THEME_FILE_VERSION = 1 as const;
 export const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
 export const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
@@ -376,6 +386,7 @@ const LEGACY_THEME_ID_ALIASES: Readonly<Record<string, string>> = {
   "t3-ocean": OCEAN_THEME_ID,
   "t3-ember": EMBER_THEME_ID,
   "t3-iris": IRIS_THEME_ID,
+  "t3-cursor": CURSOR_THEME_ID,
 };
 
 function normalizeThemeId(themeId: string): string {

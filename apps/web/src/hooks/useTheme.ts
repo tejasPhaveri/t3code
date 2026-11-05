@@ -41,11 +41,11 @@ type DesktopThemeBridge = Pick<DesktopBridge, "setTheme">;
 const STORAGE_KEY = "t3code:theme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
-  theme: "system",
-  resolvedTheme: "light",
+  theme: "cursor",
+  resolvedTheme: "dark",
   systemDark: false,
-  followSystem: true,
-  appearanceMode: "system",
+  followSystem: false,
+  appearanceMode: "dark",
   themeHalves: null,
 };
 
@@ -160,14 +160,18 @@ function isThemePreferenceMode(value: string | null): value is ThemePreferenceMo
 }
 
 export function readAppearanceModePreference(theme: Theme): ThemePreferenceMode {
+  let hasStoredTheme = false;
   if (typeof window !== "undefined") {
     try {
       const raw = window.localStorage.getItem(THEME_APPEARANCE_MODE_STORAGE_KEY);
       if (isThemePreferenceMode(raw)) return raw;
+      hasStoredTheme = window.localStorage.getItem(STORAGE_KEY) !== null;
     } catch {}
   }
 
   if (readStoredFollowSystem(theme)) return "system";
+  // An untouched install opens in Cursor Dark instead of following the OS.
+  if (!hasStoredTheme) return "dark";
   return getThemePreferenceMode(theme) ?? "light";
 }
 

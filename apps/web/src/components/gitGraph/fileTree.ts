@@ -55,6 +55,33 @@ function toNodes(folder: MutableFolder, prefix: string): FileTreeNode[] {
   return [...folders, ...files];
 }
 
+// A folder dot uses the strongest change under it, the way VS Code paints one git decoration.
+const DECORATION_PRIORITY: readonly GitGraphWorktreeFile["status"][] = [
+  "conflicted",
+  "modified",
+  "type-changed",
+  "deleted",
+  "renamed",
+  "copied",
+  "added",
+  "untracked",
+];
+
+export function dominantFileStatus(
+  statuses: Iterable<GitGraphWorktreeFile["status"]>,
+): GitGraphWorktreeFile["status"] | null {
+  let best: GitGraphWorktreeFile["status"] | null = null;
+  let bestRank = DECORATION_PRIORITY.length;
+  for (const status of statuses) {
+    const rank = DECORATION_PRIORITY.indexOf(status);
+    if (rank !== -1 && rank < bestRank) {
+      best = status;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
 export function buildFileTree(files: readonly GitGraphWorktreeFile[]): FileTreeNode[] {
   const root = emptyFolder();
   for (const file of files) {

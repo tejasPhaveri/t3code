@@ -129,6 +129,10 @@ export const GitRunStackedActionInput = Schema.Struct({
   action: GitStackedAction,
   commitMessage: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(10_000))),
   featureBranch: Schema.optional(Schema.Boolean),
+  /** With `create_pr`, the branch to open. Omit it to use the checked-out branch. */
+  headBranch: Schema.optional(TrimmedNonEmptyStringSchema),
+  /** With `create_pr`, the branch it opens into. Omit it to use the default branch. */
+  baseBranch: Schema.optional(TrimmedNonEmptyStringSchema),
   filePaths: Schema.optional(Schema.Array(GitFilePath).check(Schema.isMinLength(1))),
   threadId: Schema.optional(ThreadId),
   projectId: Schema.optional(ProjectId),
