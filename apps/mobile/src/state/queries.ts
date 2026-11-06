@@ -410,15 +410,14 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   });
   const { canReadFiles } = fileAccess;
   const searchTarget =
-    debouncedTarget.environmentId !== null &&
-    debouncedTarget.cwd !== null &&
-    debouncedTarget.query.length > 0
+    debouncedTarget.environmentId !== null && debouncedTarget.cwd !== null
       ? {
           environmentId: debouncedTarget.environmentId,
           input: {
             cwd: debouncedTarget.cwd,
             query: debouncedTarget.query,
             limit: COMPOSER_PATH_SEARCH_LIMIT,
+            preferSkillPaths: true,
           },
         }
       : null;

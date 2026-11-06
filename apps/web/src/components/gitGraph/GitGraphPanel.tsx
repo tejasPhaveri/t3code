@@ -892,6 +892,7 @@ export function GitGraphPanel(props: {
       >
         <aside className="h-full overflow-auto">
           <GitSourceControl
+            environmentId={environmentId}
             worktrees={worktrees.data?.worktrees ?? null}
             error={worktrees.error}
             cwd={cwd}

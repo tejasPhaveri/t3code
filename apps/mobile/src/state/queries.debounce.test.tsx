@@ -78,6 +78,11 @@ const target = {
 it("keeps the original search deadline when rerenders have equivalent targets", () => {
   using harness = setup();
   harness.render({ ...target, query: null });
+  expect(mocks.searchEntries).toHaveBeenCalledExactlyOnceWith({
+    environmentId: target.environmentId,
+    input: { cwd: target.cwd, query: "", limit: 20, preferSkillPaths: true },
+  });
+  mocks.searchEntries.mockClear();
   harness.render({ ...target, query: " src " });
   act(() => vi.advanceTimersByTime(100));
   harness.render(target);
@@ -87,7 +92,7 @@ it("keeps the original search deadline when rerenders have equivalent targets", 
   act(() => vi.advanceTimersByTime(1));
   expect(mocks.searchEntries).toHaveBeenCalledExactlyOnceWith({
     environmentId: target.environmentId,
-    input: { cwd: target.cwd, query: target.query, limit: 20 },
+    input: { cwd: target.cwd, query: target.query, limit: 20, preferSkillPaths: true },
   });
 });
 
@@ -98,6 +103,7 @@ it.each([
 ])("restarts the search deadline when the $field changes", ({ changed }) => {
   using harness = setup();
   harness.render({ ...target, query: null });
+  mocks.searchEntries.mockClear();
   harness.render(target);
   act(() => vi.advanceTimersByTime(100));
   harness.render(changed);
@@ -110,7 +116,7 @@ it.each([
   act(() => vi.advanceTimersByTime(1));
   expect(mocks.searchEntries).toHaveBeenCalledExactlyOnceWith({
     environmentId: changed.environmentId,
-    input: { cwd: changed.cwd, query: changed.query, limit: 20 },
+    input: { cwd: changed.cwd, query: changed.query, limit: 20, preferSkillPaths: true },
   });
 });
 

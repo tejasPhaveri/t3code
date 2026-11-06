@@ -173,6 +173,48 @@ function findInsertionIndex<T>(
   return low;
 }
 
+const AGENT_SKILL_DIRECTORY_NAMES = new Set([".agents", ".agent", "skills"]);
+
+/** Queries that still find skill files after frecency has ranked them out of the page. */
+export const AGENT_SKILL_PATH_SEED_QUERIES = [".agents", ".agent", "skills", "SKILL.md"] as const;
+
+function pathSegments(path: string): string[] {
+  return path.split(/[/\\]+/).filter((segment) => segment.length > 0);
+}
+
+function isAgentSkillDirectory(segment: string): boolean {
+  const name = segment.toLowerCase();
+  return AGENT_SKILL_DIRECTORY_NAMES.has(name) || name.startsWith("skills-");
+}
+
+export function isAgentSkillPath(path: string): boolean {
+  const segments = pathSegments(path);
+  const fileName = segments.at(-1)?.toLowerCase();
+  if (fileName === "skill.md") return true;
+  return segments.some(isAgentSkillDirectory);
+}
+
+export function prefersAgentSkillPaths(query: string): boolean {
+  if (query.length === 0) return true;
+  const normalized = query.toLowerCase().replace(/^\.+/, "");
+  if (normalized.length < 2) return false;
+  return ["agents", "agent", "skills", "skill"].some(
+    (token) => token.startsWith(normalized) || normalized.startsWith(token),
+  );
+}
+
+export function orderAgentSkillPathsFirst<T extends { readonly path: string }>(
+  entries: ReadonlyArray<T>,
+): T[] {
+  const skillPaths: T[] = [];
+  const otherPaths: T[] = [];
+  for (const entry of entries) {
+    if (isAgentSkillPath(entry.path)) skillPaths.push(entry);
+    else otherPaths.push(entry);
+  }
+  return skillPaths.length === 0 ? [...entries] : [...skillPaths, ...otherPaths];
+}
+
 export function insertRankedSearchResult<T>(
   rankedEntries: RankedSearchResult<T>[],
   candidate: RankedSearchResult<T>,

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   insertRankedSearchResult,
+  isAgentSkillPath,
+  orderAgentSkillPathsFirst,
+  prefersAgentSkillPaths,
   scoreQueryMatch,
   scoreSubsequenceMatch,
 } from "./searchRanking.ts";
@@ -55,5 +58,39 @@ describe("insertRankedSearchResult", () => {
     insertRankedSearchResult(ranked, { item: "c", score: 30, tieBreaker: "c" }, 2);
 
     expect(ranked.map((entry) => entry.item)).toEqual(["a", "b"]);
+  });
+});
+
+describe("orderAgentSkillPathsFirst", () => {
+  it("keeps skill directories ahead of other paths and stable within each group", () => {
+    expect(
+      isAgentSkillPath(".agents/skills/review/SKILL.md") &&
+        isAgentSkillPath(".claude/skills/review/SKILL.md") &&
+        isAgentSkillPath(".cursor/skills-cursor/builtin/SKILL.md") &&
+        isAgentSkillPath("skills/guide.md") &&
+        isAgentSkillPath("SKILL.md"),
+    ).toBe(true);
+    expect(
+      isAgentSkillPath("src/agent.ts") ||
+        isAgentSkillPath("packages/provider-cursor/src/server/skills.ts") ||
+        isAgentSkillPath("README.md"),
+    ).toBe(false);
+
+    expect(
+      orderAgentSkillPathsFirst([
+        { path: "README.md" },
+        { path: ".agents/skills/review/SKILL.md" },
+        { path: "src/app.ts" },
+        { path: "skills/guide.md" },
+      ]).map((entry) => entry.path),
+    ).toEqual([".agents/skills/review/SKILL.md", "skills/guide.md", "README.md", "src/app.ts"]);
+  });
+
+  it("boosts an empty mention and skill-directory prefixes only", () => {
+    expect(prefersAgentSkillPaths("")).toBe(true);
+    expect(prefersAgentSkillPaths("agents")).toBe(true);
+    expect(prefersAgentSkillPaths("sk")).toBe(true);
+    expect(prefersAgentSkillPaths("a")).toBe(false);
+    expect(prefersAgentSkillPaths("readme")).toBe(false);
   });
 });

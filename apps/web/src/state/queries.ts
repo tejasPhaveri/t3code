@@ -291,9 +291,10 @@ function areProjectPathSearchTargetsEqual(
 export function useProjectPathSearch(
   target: ProjectPathSearchTarget,
   limit: number,
-  options?: { readonly allowEmptyQuery?: boolean },
+  options?: { readonly allowEmptyQuery?: boolean; readonly preferSkillPaths?: boolean },
 ) {
   const allowEmptyQuery = options?.allowEmptyQuery === true;
+  const preferSkillPaths = options?.preferSkillPaths === true;
   const normalizedTarget = {
     environmentId: target.environmentId,
     cwd: target.cwd,
@@ -317,6 +318,7 @@ export function useProjectPathSearch(
             limit,
             ...(debouncedTarget.kind ? { kind: debouncedTarget.kind } : {}),
             ...(debouncedTarget.imageOnly ? { imageOnly: true } : {}),
+            ...(preferSkillPaths ? { preferSkillPaths: true } : {}),
           },
         }
       : null;
@@ -344,7 +346,10 @@ export function useProjectPathSearch(
 }
 
 export function useComposerPathSearch(target: ComposerPathSearchTarget) {
-  return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT);
+  return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT, {
+    allowEmptyQuery: true,
+    preferSkillPaths: true,
+  });
 }
 
 interface ProjectContentSearchTarget {

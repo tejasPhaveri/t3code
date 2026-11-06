@@ -23,6 +23,8 @@ import {
   type GitResolvePullRequestResult,
   type GitRunStackedActionInput,
   type GitRunStackedActionResult,
+  type GitSuggestCommitMessageInput,
+  type GitSuggestCommitMessageResult,
   type VcsStatusInput,
   type VcsStatusLocalResult,
   type VcsStatusRemoteResult,
@@ -65,6 +67,9 @@ export class GitWorkflowService extends Context.Service<
       input: GitRunStackedActionInput,
       options?: GitManager.GitRunStackedActionOptions,
     ) => Effect.Effect<GitRunStackedActionResult, GitManagerServiceError>;
+    readonly suggestCommitMessage: (
+      input: GitSuggestCommitMessageInput,
+    ) => Effect.Effect<GitSuggestCommitMessageResult, GitManagerServiceError>;
     readonly resolvePullRequest: (
       input: GitPullRequestRefInput,
     ) => Effect.Effect<GitResolvePullRequestResult, GitManagerServiceError>;
@@ -382,6 +387,13 @@ export const make = Effect.gen(function* () {
             handle.repository.rootPath,
             gitManager.runStackedAction(input, options),
           ),
+        ),
+      );
+    }),
+    suggestCommitMessage: Effect.fn("GitWorkflowService.suggestCommitMessage")(function (input) {
+      return ensureGit("GitWorkflowService.suggestCommitMessage", input.cwd).pipe(
+        Effect.flatMap((handle) =>
+          withCheckoutLease(handle.repository.rootPath, gitManager.suggestCommitMessage(input)),
         ),
       );
     }),

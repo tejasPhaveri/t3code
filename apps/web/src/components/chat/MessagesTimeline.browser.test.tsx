@@ -217,14 +217,13 @@ const TASK_ID = ScheduledTaskId.make("task-1");
 const AUTOMATION_PROMPT = "Triage the inbox\n\nLabel every new issue and close duplicates.";
 
 describe("MessagesTimeline work rows", () => {
-  it("keeps the worked-for heading in place when expanded at the bottom", async () => {
-    const props = baseProps();
+  it("leaves finished tool calls and reasoning out of the transcript", async () => {
     const runId = RunId.make("completed-run");
     const container = document.createElement("div");
     container.style.cssText = "height: 600px; width: 900px; display: flex; flex-direction: column;";
     await using screen = await render(
       <MessagesTimeline
-        {...props}
+        {...baseProps()}
         timelineEntries={[
           ...Array.from({ length: 12 }, (_, index) =>
             message(`Earlier context ${index}`, {}, `context-${index}`),
@@ -235,27 +234,8 @@ describe("MessagesTimeline work rows", () => {
       />,
       { container },
     );
-    const heading = screen.getByRole("button", { name: /^Worked for/ });
-    // LegendList keeps rows click-through until its initial scroll settles on animation
-    // frames, which the fake clock below would freeze.
-    await expect.element(heading).toHaveStyle({ pointerEvents: "auto" });
-    const viewport = props.listRef.current!.getScrollableNode()!;
-    await vi.waitFor(() =>
-      expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeLessThan(2),
-    );
-    expect(viewport.scrollTop).toBeGreaterThan(0);
-    const top = heading.element().getBoundingClientRect().top;
-    const height = viewport.scrollHeight;
-    using _timers = fakeTimers();
-    await heading.click();
-    await act(() => vi.advanceTimersByTime(1000));
-    await vi.waitFor(() => {
-      expect(viewport.scrollHeight).toBeGreaterThan(height + 500);
-      expect(heading.element().getBoundingClientRect().top).toBeCloseTo(top, 0);
-      expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeGreaterThan(
-        500,
-      );
-    });
+    await expect.element(screen.getByText("Done")).toBeVisible();
+    expect(screen.container.textContent).not.toContain("Worked for");
   });
 
   it.each(["delegated", "legacy", "missing"] as const)(
@@ -1543,11 +1523,7 @@ it("keeps concurrent approvals actionable outside collapsed work and restores se
     .element(screen.getByRole("group", { name: "Command approval" }))
     .not.toBeInTheDocument();
   await vi.waitFor(() => expect(screen.text()).not.toContain("Waiting for approval"));
-  await screen.getByRole("button", { expanded: false }).click();
-  await expect
-    .element(screen.getByRole("button", { name: approvals[0]!.detail!, exact: true }))
-    .toBeVisible();
-  await expect
-    .element(screen.getByRole("button", { name: "Open the current tab", exact: true }))
-    .toBeVisible();
+  expect(screen.container.textContent).not.toContain("Worked for");
+  expect(screen.container.textContent).not.toContain(approvals[0]!.detail!);
+  expect(screen.container.textContent).not.toContain("Open the current tab");
 });

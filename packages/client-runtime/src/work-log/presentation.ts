@@ -653,6 +653,29 @@ export function toolGroupSummaryKind(
   return fallbackKinds.size === 1 ? fallbackKinds.values().next().value! : "mixed";
 }
 
+export function workActivityIsQuiet(
+  entry: WorkLogPresentationEntry & { readonly sourceActivityKind?: string },
+): boolean {
+  if (entry.questionAnswer !== undefined) return false;
+  if (
+    entry.itemType === "notification" ||
+    entry.itemType === "system_notice" ||
+    entry.itemType === "approval_request" ||
+    entry.structuredPayload?.type === "approval_request"
+  ) {
+    return false;
+  }
+  if (
+    entry.tone === "error" ||
+    entry.sourceActivityKind === "runtime.error" ||
+    (entry.itemType === "error" && entry.toolLifecycleStatus === "failed") ||
+    workEntryDisplayIndicatesToolFailure(entry)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export function liveThoughtLine(markdown: string): string {
   const heading = /^\s*\*\*([^*\r\n]+)\*\*[ \t]*\r?(?:\n|$)/.exec(markdown)?.[1];
   const text = (heading ?? markdown)

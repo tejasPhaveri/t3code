@@ -63,6 +63,62 @@ it.effect("filters image searches before applying the result limit", () =>
   ),
 );
 
+it.effect("lists agent skill paths ahead of frecency matches", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const pages: Record<string, ReadonlyArray<string>> = {
+        "": ["README.md", "src/app.ts"],
+        ".agents": [".agents/skills/review/SKILL.md", "src/agent.ts"],
+        skills: ["skills/guide.md", "packages/provider-cursor/src/server/skills.ts"],
+        "SKILL.md": [".claude/skills/review/SKILL.md"],
+        readme: ["README.md", "src/app.ts"],
+      };
+      const mixedSearch = vi.fn((query: string) => {
+        const paths = pages[query] ?? [];
+        return {
+          ok: true as const,
+          value: {
+            items: paths.map((path) => ({ type: "file" as const, item: fileItem(path) })),
+            totalMatched: paths.length,
+            totalFiles: paths.length,
+          },
+        };
+      });
+      const finder = {
+        destroy: vi.fn(),
+        waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
+        mixedSearch,
+      } as unknown as FileFinder;
+      vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+
+      const searchIndex = yield* WorkspaceSearchIndex.make("/workspace/project");
+      const mentioned = yield* searchIndex.search("", 80, undefined, false, {
+        preferSkillPaths: true,
+      });
+      const named = yield* searchIndex.search("readme", 80, undefined, false, {
+        preferSkillPaths: true,
+      });
+
+      expect(mentioned.entries.map((entry) => entry.path)).toEqual([
+        ".agents/skills/review/SKILL.md",
+        "skills/guide.md",
+        ".claude/skills/review/SKILL.md",
+        "README.md",
+        "src/app.ts",
+      ]);
+      expect(named.entries.map((entry) => entry.path)).toEqual(["README.md", "src/app.ts"]);
+      expect(mixedSearch.mock.calls.map((call) => call[0])).toEqual([
+        "",
+        ".agents",
+        ".agent",
+        "skills",
+        "SKILL.md",
+        "readme",
+      ]);
+    }),
+  ),
+);
+
 it.effect("continues whole-word searches after a filtered grep page", () =>
   Effect.scoped(
     Effect.gen(function* () {

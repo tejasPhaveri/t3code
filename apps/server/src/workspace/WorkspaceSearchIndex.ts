@@ -26,6 +26,12 @@ import type {
   ProjectSearchEntriesResult,
 } from "@t3tools/contracts";
 import { isProjectFaviconPath } from "@t3tools/shared/projectFavicon";
+import {
+  AGENT_SKILL_PATH_SEED_QUERIES,
+  isAgentSkillPath,
+  orderAgentSkillPathsFirst,
+  prefersAgentSkillPaths,
+} from "@t3tools/shared/searchRanking";
 
 // fff-node's native library stays external; single-executables require disk packages instead of importing them.
 const requireForFff = NodeModule.createRequire(import.meta.url);
@@ -113,6 +119,7 @@ export class WorkspaceSearchIndex extends Context.Service<
       limit: number,
       kind?: ProjectEntryKind,
       imageOnly?: boolean,
+      options?: { readonly preferSkillPaths?: boolean },
     ) => Effect.Effect<ProjectSearchEntriesResult, WorkspaceSearchIndexSearchFailed>;
     readonly searchContents: (
       input: Omit<ProjectSearchContentsInput, "cwd">,
@@ -449,9 +456,12 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     },
   );
 
-  const search: WorkspaceSearchIndex["Service"]["search"] = Effect.fn(
-    "WorkspaceSearchIndex.search",
-  )(function* (query, limit, kind, imageOnly) {
+  const searchPage = Effect.fn("WorkspaceSearchIndex.searchPage")(function* (
+    query: string,
+    limit: number,
+    kind?: ProjectEntryKind,
+    imageOnly?: boolean,
+  ) {
     const pageSize = imageOnly ? WORKSPACE_INDEX_PAGE_SIZE : Math.max(1, limit + 1);
     const incompleteBeforeQuery = hasIncompleteInitialScan();
     if (kind === "file" || imageOnly) {
@@ -473,6 +483,36 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     );
     const mapped = mapMixedSearchResult(result, limit);
     return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
+  });
+
+  const search: WorkspaceSearchIndex["Service"]["search"] = Effect.fn(
+    "WorkspaceSearchIndex.search",
+  )(function* (query, limit, kind, imageOnly, options) {
+    const primary = yield* searchPage(query, limit, kind, imageOnly);
+    if (imageOnly || options?.preferSkillPaths !== true || !prefersAgentSkillPaths(query)) {
+      return primary;
+    }
+
+    // A frecency page misses skill dirs, and a leading dot is stripped before fff sees it.
+    const seen = new Set(primary.entries.map((entry) => `${entry.kind}\0${entry.path}`));
+    const skillEntries: ProjectEntry[] = [];
+    for (const seed of AGENT_SKILL_PATH_SEED_QUERIES) {
+      const page = yield* searchPage(seed, limit, kind, false);
+      for (const entry of page.entries) {
+        if (!isAgentSkillPath(entry.path)) continue;
+        if (query.length > 0 && !entry.path.toLowerCase().includes(query)) continue;
+        const key = `${entry.kind}\0${entry.path}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        skillEntries.push(entry);
+      }
+    }
+
+    const ordered = orderAgentSkillPathsFirst([...skillEntries, ...primary.entries]);
+    return {
+      entries: ordered.slice(0, limit),
+      truncated: primary.truncated || ordered.length > limit,
+    };
   });
 
   const searchContents: WorkspaceSearchIndex["Service"]["searchContents"] = Effect.fn(

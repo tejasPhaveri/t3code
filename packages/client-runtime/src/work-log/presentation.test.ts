@@ -7,6 +7,7 @@ import {
   resolveWorkEntryToolPresentation,
   toolItemForDisplay,
   type WorkLogPresentationEntry,
+  workActivityIsQuiet,
   workEntryIndicatesToolFailure,
   workEntryDisplayIndicatesToolFailure,
 } from "./presentation.js";
@@ -202,5 +203,45 @@ describe("resolveWorkEntryToolPresentation", () => {
         toolData: { server: "another-server", tool: "preview_click" },
       }),
     ).toBeNull();
+  });
+});
+
+describe("workActivityIsQuiet", () => {
+  const base = {
+    id: "w1",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    label: "Thinking",
+  } satisfies Partial<WorkLogPresentationEntry>;
+
+  it("hides reasoning and successful tool calls, and keeps questions and failures", () => {
+    expect(workActivityIsQuiet({ ...base, tone: "thinking", itemType: "reasoning" })).toBe(true);
+    expect(
+      workActivityIsQuiet({
+        ...base,
+        label: "Ran pnpm test",
+        tone: "tool",
+        itemType: "command_execution",
+        toolLifecycleStatus: "completed",
+        structuredPayload: commandItem({ exitCode: 0 }),
+      }),
+    ).toBe(true);
+    expect(
+      workActivityIsQuiet({
+        ...base,
+        label: "Ran pnpm test",
+        tone: "tool",
+        itemType: "command_execution",
+        toolLifecycleStatus: "failed",
+        structuredPayload: commandItem({ exitCode: 2 }),
+      }),
+    ).toBe(false);
+    expect(
+      workActivityIsQuiet({
+        ...base,
+        label: "Approval",
+        tone: "info",
+        itemType: "approval_request",
+      }),
+    ).toBe(false);
   });
 });

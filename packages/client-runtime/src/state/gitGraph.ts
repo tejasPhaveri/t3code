@@ -50,5 +50,11 @@ export function createGitGraphEnvironmentAtoms<R, E>(
       scheduler: vcsCommandScheduler,
       concurrency: vcsCommandConcurrency,
     }),
+    suggestCommitMessage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:git-graph:suggest-commit-message",
+      tag: WS_METHODS.gitSuggestCommitMessage,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+    }),
   };
 }

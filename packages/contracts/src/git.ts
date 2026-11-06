@@ -123,6 +123,16 @@ export const VcsPullInput = Schema.Struct({
 });
 export type VcsPullInput = typeof VcsPullInput.Type;
 
+export const GitSuggestCommitMessageInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type GitSuggestCommitMessageInput = typeof GitSuggestCommitMessageInput.Type;
+
+export const GitSuggestCommitMessageResult = Schema.Struct({
+  message: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(50_000)),
+});
+export type GitSuggestCommitMessageResult = typeof GitSuggestCommitMessageResult.Type;
+
 export const GitRunStackedActionInput = Schema.Struct({
   actionId: TrimmedNonEmptyStringSchema,
   cwd: TrimmedNonEmptyStringSchema,

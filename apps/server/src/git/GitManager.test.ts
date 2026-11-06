@@ -2792,6 +2792,48 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       }),
   );
 
+  it.effect("suggests a commit message for staged changes without committing", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nworld\n");
+      let generated: TextGeneration.CommitMessageGenerationInput | undefined;
+
+      const { manager } = yield* makeManager({
+        serverSettings: {
+          sourceControlWritingStyle: {
+            mode: "custom" as const,
+            customInstructions: "Be terse.",
+          },
+        },
+        textGeneration: {
+          generateCommitMessage: (input) => {
+            generated = input;
+            return Effect.succeed({ subject: "Update the readme", body: "Describe the change." });
+          },
+        },
+      });
+
+      const missing = yield* manager.suggestCommitMessage({ cwd: repoDir }).pipe(Effect.flip);
+      expect(missing).toMatchObject({ detail: "Nothing is staged to describe." });
+
+      yield* runGit(repoDir, ["add", "README.md"]);
+      const result = yield* manager.suggestCommitMessage({ cwd: repoDir });
+
+      expect(result.message).toBe("Update the readme\n\nDescribe the change.");
+      expect(generated?.modelSelection).toEqual(
+        DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+      );
+      expect(generated?.policy).toMatchObject({ commitInstructions: "Be terse." });
+      expect(generated?.stagedPatch).toContain("world");
+      expect(
+        yield* runGit(repoDir, ["log", "-1", "--pretty=%s"]).pipe(
+          Effect.map((log) => log.stdout.trim()),
+        ),
+      ).toBe("Initial commit");
+    }),
+  );
+
   it.effect("creates a commit when working tree is dirty", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");

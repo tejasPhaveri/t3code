@@ -1,14 +1,34 @@
-import type { GitGraphAction, GitGraphWorktree, GitGraphWorktreeFile } from "@t3tools/contracts";
-import { ChevronDown, ChevronRight, FileText, GitBranch, Minus, Plus, Undo2 } from "lucide-react";
+import type {
+  EnvironmentId,
+  GitGraphAction,
+  GitGraphWorktree,
+  GitGraphWorktreeFile,
+} from "@t3tools/contracts";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { useAtomValue } from "@effect/atom-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  GitBranch,
+  Minus,
+  Plus,
+  Sparkles,
+  Undo2,
+} from "lucide-react";
 import { useState } from "react";
 
 import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
 import { resolveDiffPathForWorkspace } from "~/diffFileActions";
 import { useRenderedAppearance } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
+import { gitGraphEnvironment } from "~/state/gitGraph";
+import { useAtomCommand } from "~/state/use-atom-command";
 
 import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
 import { Textarea } from "../ui/textarea";
+import { toastManager } from "../ui/toast";
 import { buildFileTree, dominantFileStatus, type FileTreeNode } from "./fileTree";
 import { GIT_STATUS_CLASS, GIT_STATUS_DOT, GIT_STATUS_LETTER } from "./gitDecoration";
 import { useSourceControlLayoutStore, useSourceControlOpen } from "./sourceControlLayoutStore";
@@ -265,7 +285,16 @@ function ChangeGroup(props: {
   );
 }
 
+function commandErrorDetail(error: unknown): string {
+  if (typeof error === "object" && error !== null && "detail" in error) {
+    const detail = error.detail;
+    if (typeof detail === "string" && detail.trim().length > 0) return detail;
+  }
+  return error instanceof Error ? error.message : "Could not generate a commit message.";
+}
+
 function WorktreeSection(props: {
+  readonly environmentId: EnvironmentId;
   readonly worktree: GitGraphWorktree;
   readonly showPath: boolean;
   readonly cwd: string;
@@ -277,6 +306,13 @@ function WorktreeSection(props: {
   const [expanded, setExpanded] = useSourceControlOpen(worktree.path, worktree.current);
   const [message, setMessage] = useState("");
   const [committing, setCommitting] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const canWrite = useAtomValue(
+    gitGraphEnvironment.suggestCommitMessage.permissionAtom(props.environmentId),
+  );
+  const suggestCommitMessage = useAtomCommand(gitGraphEnvironment.suggestCommitMessage, {
+    reportFailure: false,
+  });
   const target = worktree.current ? {} : { worktreePath: worktree.path };
   const changeCount = worktree.staged.length + worktree.unstaged.length;
   const open: FileOpeners | null = worktree.current
@@ -324,7 +360,29 @@ function WorktreeSection(props: {
   };
   // A merge can be concluded with git's prepared message, so it needs no typed one.
   const canCommit =
-    !committing && (worktree.merging || (message.trim().length > 0 && worktree.staged.length > 0));
+    !committing &&
+    !generating &&
+    (worktree.merging || (message.trim().length > 0 && worktree.staged.length > 0));
+  const canGenerate =
+    canWrite !== false && !committing && !generating && worktree.staged.length > 0;
+  const generate = async () => {
+    if (!canGenerate) return;
+    setGenerating(true);
+    const result = await suggestCommitMessage({
+      environmentId: props.environmentId,
+      input: { cwd: worktree.path },
+    });
+    setGenerating(false);
+    if (result._tag === "Failure") {
+      toastManager.add({
+        type: "error",
+        title: "Could not generate a commit message",
+        description: commandErrorDetail(squashAtomCommandFailure(result)),
+      });
+      return;
+    }
+    setMessage(result.value.message);
+  };
   const commit = async () => {
     if (!canCommit) return;
     setCommitting(true);
@@ -385,6 +443,7 @@ function WorktreeSection(props: {
             <Textarea
               size="sm"
               aria-label="Commit message"
+              disabled={generating}
               placeholder={
                 worktree.merging
                   ? "Message (blank keeps the merge message)"
@@ -399,14 +458,30 @@ function WorktreeSection(props: {
                 }
               }}
             />
-            <Button
-              size="xs"
-              className="w-full"
-              disabled={!canCommit}
-              onClick={() => void commit()}
-            >
-              {committing ? "Committing…" : worktree.merging ? "Commit merge" : "Commit"}
-            </Button>
+            <div className="flex gap-1.5">
+              {canWrite === false ? null : (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={!canGenerate}
+                  aria-label="Generate commit message"
+                  onClick={() => void generate()}
+                >
+                  {generating ? <Spinner /> : <Sparkles />}
+                  {generating ? "Generating…" : "Generate"}
+                </Button>
+              )}
+              <div className="min-w-0 flex-1">
+                <Button
+                  size="xs"
+                  className="w-full"
+                  disabled={!canCommit}
+                  onClick={() => void commit()}
+                >
+                  {committing ? "Committing…" : worktree.merging ? "Commit merge" : "Commit"}
+                </Button>
+              </div>
+            </div>
           </div>
           {changeCount === 0 ? <div className="px-3 text-muted-foreground">No changes.</div> : null}
           <ChangeGroup
@@ -444,6 +519,7 @@ function WorktreeSection(props: {
 
 /** Source control for the project's checkout and each of its worktrees. */
 export function GitSourceControl(props: {
+  readonly environmentId: EnvironmentId;
   readonly worktrees: readonly GitGraphWorktree[] | null;
   readonly error: string | null;
   readonly cwd: string;
@@ -460,6 +536,7 @@ export function GitSourceControl(props: {
       {props.worktrees.map((worktree) => (
         <WorktreeSection
           key={worktree.path}
+          environmentId={props.environmentId}
           worktree={worktree}
           showPath={props.worktrees!.length > 1}
           cwd={props.cwd}
