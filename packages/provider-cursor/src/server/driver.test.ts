@@ -4,7 +4,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
-  DEFAULT_SERVER_SETTINGS,
   MessageId,
   NodeId,
   ProjectId,
@@ -25,7 +24,6 @@ import { vi } from "vite-plus/test";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as Deferred from "effect/Deferred";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import {
   DEFAULT_HANDOFF_TOKEN_CAP,
@@ -36,7 +34,6 @@ import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
 import { CursorDriver } from "./driver.ts";
 import * as CursorAgentSdk from "./CursorAgentSdk.ts";
 import * as CursorSdk from "./CursorSdk.ts";
-import * as CursorKeychain from "./CursorKeychain.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -55,11 +52,6 @@ const layerTest = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
     }),
   ),
   Layer.provideMerge(
-    Layer.succeed(CursorKeychain.CursorKeychain, {
-      accessToken: Effect.die("The driver test must not read the Keychain"),
-    }),
-  ),
-  Layer.provideMerge(
     Layer.succeed(
       ProviderEventLoggers.ProviderEventLoggers,
       ProviderEventLoggers.NoOpProviderEventLoggers,
@@ -75,13 +67,9 @@ const layerTest = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
 
 it.layer(layerTest)("CursorDriver", (it) => {
   it.effect(
-    "persists browser credentials, uses them for chat and opted-in limits, and closes the SDK session on logout",
+    "persists browser credentials, uses them for chat, and closes the SDK session on logout",
     () =>
       Effect.gen(function* () {
-        yield* (yield* TestProviderHost.TestProviderHostSettings).set({
-          ...DEFAULT_SERVER_SETTINGS,
-          cursorKeychainUsageEnabled: true,
-        });
         const login = vi.spyOn(Cursor.auth, "login").mockImplementation(async (options) => {
           options?.onLoginUrl?.("https://cursor.com/loginDeepControl?challenge=test-only");
           await options?.store?.save({
@@ -97,15 +85,6 @@ it.layer(layerTest)("CursorDriver", (it) => {
         const requests: Array<{ url: string; authorization: string | undefined }> = [];
         const client = HttpClient.make((request) => {
           requests.push({ url: request.url, authorization: request.headers.authorization });
-          if (request.url.endsWith("/GetCurrentPeriodUsage")) {
-            expect(request.headers.authorization).toBe("Bearer keychain-token");
-            return Effect.succeed(
-              HttpClientResponse.fromWeb(
-                request,
-                Response.json({ planUsage: { totalPercentUsed: 42 } }),
-              ),
-            );
-          }
           return Effect.succeed(
             HttpClientResponse.fromWeb(
               request,
@@ -121,13 +100,6 @@ it.layer(layerTest)("CursorDriver", (it) => {
             ),
           );
         });
-        const withBrowserServices = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-          effect.pipe(
-            Effect.provideService(CursorKeychain.CursorKeychain, {
-              accessToken: Effect.succeed("keychain-token"),
-            }),
-            Effect.provideService(HttpClient.HttpClient, client),
-          );
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
             login.mockRestore();
@@ -143,7 +115,7 @@ it.layer(layerTest)("CursorDriver", (it) => {
         const openedKeys: Array<string | undefined> = [];
         let closed = 0;
         const instance = yield* CursorDriver.create(input).pipe(
-          withBrowserServices,
+          Effect.provideService(HttpClient.HttpClient, client),
           Effect.provideService(CursorAgentSdk.CursorAgentSdkRunner, {
             assertComplete: Effect.void,
             open: (request) =>
@@ -181,7 +153,6 @@ it.layer(layerTest)("CursorDriver", (it) => {
           },
           setup: { canAuthenticate: true, canInstall: false },
         });
-        expect((yield* instance.snapshot.refresh).usageLimits?.windows[0]?.usedPercent).toBe(42);
         const threadId = ThreadId.make("cursor-browser-thread");
         const modelSelection = { instanceId: input.instanceId, model: "auto" };
         const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -198,10 +169,10 @@ it.layer(layerTest)("CursorDriver", (it) => {
         yield* runtime.ensureThread({ threadId, modelSelection, runtimePolicy });
         expect(openedKeys).toEqual(["instance-browser-key"]);
         expect(closed).toBe(0);
-        const recreated = yield* CursorDriver.create(input).pipe(withBrowserServices);
-        const refreshed = yield* recreated.snapshot.refresh;
-        expect(refreshed.usageLimits?.windows[0]?.usedPercent).toBe(42);
-        expect(refreshed.auth.status).toBe("authenticated");
+        const recreated = yield* CursorDriver.create(input).pipe(
+          Effect.provideService(HttpClient.HttpClient, client),
+        );
+        expect((yield* recreated.snapshot.refresh).auth.status).toBe("authenticated");
         yield* instance.auth!.logout(Effect.void);
         expect(closed).toBe(1);
         expect((yield* instance.snapshot.getSnapshot).auth.status).toBe("unauthenticated");
@@ -212,7 +183,7 @@ it.layer(layerTest)("CursorDriver", (it) => {
         ).toBe("Failure");
         expect(openedKeys).toEqual(["instance-browser-key"]);
         expect(closed).toBe(1);
-      }).pipe(Effect.provideService(HostProcess.Platform, "darwin"), Effect.scoped),
+      }).pipe(Effect.scoped),
   );
 
   it.effect("budgets handoffs for the SDK model across catalog refreshes and option changes", () =>

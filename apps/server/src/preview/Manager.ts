@@ -43,6 +43,10 @@ export class PreviewManager extends Context.Service<
     readonly reportStatus: (
       input: PreviewReportStatusInput & { readonly serverControlled?: boolean },
     ) => Effect.Effect<void, PreviewError>;
+    /** Publishes the tab's unchanged snapshot again, for clients that dropped the tab. */
+    readonly announce: (
+      input: PreviewCloseInput & { readonly tabId: string },
+    ) => Effect.Effect<void, PreviewError>;
     readonly requestReveal: (
       input: PreviewCloseInput & { readonly tabId: string; readonly force: boolean },
     ) => Effect.Effect<void, PreviewError>;
@@ -277,6 +281,28 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     );
   });
 
+  const announce: PreviewManager["Service"]["announce"] = Effect.fn("PreviewManager.announce")(
+    function* (input) {
+      return yield* mutateExistingSession(
+        input.threadId,
+        input.tabId,
+        Effect.fn("PreviewManager.announceSession")(function* (session) {
+          return {
+            next: session,
+            emit: {
+              type: "resized",
+              threadId: session.threadId,
+              tabId: session.tabId,
+              createdAt: yield* currentIsoTimestamp,
+              snapshot: session.snapshot,
+            },
+            result: undefined,
+          };
+        }),
+      );
+    },
+  );
+
   const resize: PreviewManager["Service"]["resize"] = Effect.fn("PreviewManager.resize")(
     function* (input) {
       return yield* mutateExistingSession(
@@ -438,6 +464,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     open,
     requestReveal,
     reportStatus,
+    announce,
     resize,
     adjust,
     close,

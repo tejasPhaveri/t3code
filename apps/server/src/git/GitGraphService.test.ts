@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -199,7 +200,7 @@ const layerFor = (cwd: string) =>
     Layer.provideMerge(Layer.mergeAll(GitVcsDriver.layerVcs, GitVcsDriver.layer)),
     Layer.provideMerge(ServerConfig.layerTest(cwd, { prefix: "t3-git-graph-config-" })),
     Layer.provideMerge(VcsProcess.layer),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 
 /** A repository with one commit, inside a scoped temp folder that is also the workspace root. */

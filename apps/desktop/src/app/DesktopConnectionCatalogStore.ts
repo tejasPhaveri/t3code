@@ -12,6 +12,7 @@ import {
 } from "@t3tools/client-runtime/platform";
 import type { PersistedSavedEnvironmentRecord } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect has no AES-GCM cipher.
 import * as NodeCrypto from "node:crypto";
 
 import * as Context from "effect/Context";
@@ -458,7 +459,7 @@ export const make = Effect.gen(function* () {
     create: boolean,
   ) {
     const existing = yield* fileSystem.readFile(catalogKeyPath).pipe(
-      Effect.map(Option.some),
+      Effect.asSome,
       Effect.catch((error) =>
         error.reason._tag === "NotFound"
           ? Effect.succeed(Option.none<Uint8Array>())

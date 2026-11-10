@@ -141,10 +141,10 @@ export class SessionControl {
         now < this.reservedUntil
       ) {
         return Promise.reject(
-          new BrowserControlInterrupted(
-            "Another agent is controlling this browser tab.",
-            "agentMismatch",
-          ),
+          new BrowserControlInterrupted({
+            message: "Another agent is controlling this browser tab.",
+            reason: "agentMismatch",
+          }),
         );
       }
       this.reservedAgent = agentId;

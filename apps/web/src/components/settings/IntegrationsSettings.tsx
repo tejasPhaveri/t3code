@@ -927,7 +927,7 @@ function DeviceIntegrationControls({
                   .finally(() => setPending(null));
               }}
             >
-              {pending === `update-${tool}` ? "Updating…" : `Update to v${version.requiredVersion}`}
+              {pending === `update-${tool}` ? "Updating…" : "Update"}
             </Button>
           ) : null}
           {state.supportsToolInspection ? (
@@ -1130,7 +1130,7 @@ function BrowserPersistenceSetting({ disabled }: { readonly disabled: boolean })
   return (
     <SettingsRow
       {...searchableSetting("browser-persistence")}
-      description="Per project keeps the same tabs, cookies, and logins across chats in a project. Per environment shares them across projects. Per chat keeps the previous private browser. An isolated tab always stays in the chat that opened it."
+      description="Per project keeps tabs, cookies, and logins across a project's chats. Per environment shares them across projects. Per chat keeps a private browser. An isolated tab stays in the chat that opened it."
       resetAction={
         !disabled && persistence !== DEFAULT_BROWSER_PERSISTENCE ? (
           <SettingResetButton
