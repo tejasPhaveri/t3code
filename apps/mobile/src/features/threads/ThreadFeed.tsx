@@ -198,7 +198,6 @@ import {
   normalizeNativeMarkdownUrl,
   resolveMarkdownLinkPresentation,
 } from "../../lib/markdownLinks";
-import { workActivityIsQuiet } from "@t3tools/client-runtime/work-log/presentation";
 import {
   createThreadFeedCache,
   threadFeedCompactionLabels,
@@ -1707,8 +1706,6 @@ function renderFeedEntry(
 ) {
   const entry = info.item;
   const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
-  // A zero-height row makes the opening scroll give up.
-  if (concealsThreadWorkActivity(entry)) return <View style={{ height: 1 }} />;
 
   if (entry.type === "guest-pending") {
     return (
@@ -2334,21 +2331,6 @@ function renderFeedEntry(
       onPressPreview={props.onPressPreview}
     />
   );
-}
-
-function concealsThreadWorkActivity(entry: ThreadFeedRow): boolean {
-  if (entry.type === "run-fold" || entry.type === "thinking") return true;
-  if (entry.type === "work-toggle") return !entry.hasFailure;
-  if (entry.type !== "activity-group") return false;
-  if (
-    isContextCompactionActivityGroup(entry) ||
-    isContextHandoffActivityGroup(entry) ||
-    isSecretRequestActivityGroup(entry) ||
-    isLinkRequestActivityGroup(entry)
-  ) {
-    return false;
-  }
-  return entry.activities.every((activity) => workActivityIsQuiet(activity.workEntry));
 }
 
 function TurnDiffStat(props: {

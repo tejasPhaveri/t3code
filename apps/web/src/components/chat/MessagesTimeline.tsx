@@ -20,7 +20,6 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { workActivityIsQuiet } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import { observeResize } from "~/lib/observeResize";
@@ -1421,38 +1420,7 @@ function getItemType(item: MessagesTimelineRow) {
   return `message:${item.message.role}:${lengthBucket}`;
 }
 
-function concealsTimelineWorkActivity(row: MessagesTimelineRow): boolean {
-  switch (row.kind) {
-    case "turn-fold":
-      return true;
-    case "thinking":
-      return row.groupId === undefined;
-    case "work-toggle":
-      return !row.hasFailure;
-    case "work":
-    case "work-live":
-      return row.groupedEntries.every(workActivityIsQuiet);
-    case "worktree-setup":
-    case "working":
-    case "attempt-fold":
-    case "context-compaction":
-    case "message":
-    case "assistant-meta":
-    case "event":
-    case "proposed-plan":
-    case "html-render":
-    case "mcp-app":
-      return false;
-    default: {
-      const _exhaustive: never = row;
-      return _exhaustive;
-    }
-  }
-}
-
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
-  // A zero-height row makes the opening scroll give up.
-  if (concealsTimelineWorkActivity(row)) return <div className="h-px" aria-hidden="true" />;
   const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isSubagentGroup = row.kind === "event" && row.projectedItem.item.type === "subagent";
   const isWorkLogRow =
