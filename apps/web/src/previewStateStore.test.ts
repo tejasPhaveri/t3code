@@ -14,6 +14,7 @@ import {
   applyPreviewServerSnapshot,
   beginPreviewSessionClose,
   cancelPreviewSessionClose,
+  previewAddressUrl,
   previewStateAtom,
   readThreadPreviewState,
   reconcilePreviewServerSessions,
@@ -167,6 +168,15 @@ describe("previewStateStore (single-tab)", () => {
     expect(state.snapshot).toEqual(snapshot);
   });
 
+  it("shows the hosted page URL when the session snapshot is still on the last load", () => {
+    expect(
+      previewAddressUrl("https://qa.example/app/incidents", "https://qa.example/app/officers/1"),
+    ).toBe("https://qa.example/app/officers/1");
+    expect(previewAddressUrl("https://qa.example/app/incidents", undefined)).toBe(
+      "https://qa.example/app/incidents",
+    );
+  });
+
   it("does not publish duplicate desktop browser state", () => {
     const snapshot = makeSnapshot();
     applyPreviewServerSnapshot(ref, snapshot);
@@ -194,9 +204,16 @@ describe("previewStateStore (single-tab)", () => {
 
     applyPreviewDesktopState(ref, snapshot.tabId, overlay);
     applyPreviewDesktopState(ref, snapshot.tabId, { ...overlay, favicon: { ...overlay.favicon } });
+    applyPreviewDesktopState(ref, snapshot.tabId, {
+      ...overlay,
+      url: "https://qa.example/app/officers/1",
+    });
     unsubscribe();
 
-    expect(updateCount).toBe(1);
+    expect(updateCount).toBe(2);
+    expect(readThreadPreviewState(ref).desktopOverlay?.url).toBe(
+      "https://qa.example/app/officers/1",
+    );
   });
 
   it("retains multiple tabs and switches active desktop state", () => {

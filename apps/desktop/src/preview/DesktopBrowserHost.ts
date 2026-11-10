@@ -78,6 +78,7 @@ interface AttachedTab {
     sessionId: string,
   ) => void;
   readonly onNewDocument: () => void;
+  readonly onSameDocument: (event: Electron.Event, url: string, isMainFrame: boolean) => void;
 }
 
 export class DesktopBrowserHost extends Context.Service<
@@ -416,6 +417,7 @@ export const make = Effect.gen(function* () {
     tab.relay = null;
     tab.debuggee.debugger.off("message", tab.onMessage);
     tab.debuggee.webContents.off("did-navigate", tab.onNewDocument);
+    tab.debuggee.webContents.off("did-navigate-in-page", tab.onSameDocument);
     syncPainting(tab);
     emit({ type: "detached", ...key });
   };
@@ -455,10 +457,16 @@ export const make = Effect.gen(function* () {
         dropFocusHolds(tab);
         if (tab.screenshotTurn !== null) nextScreenshot(tab);
       },
+      // History API routes fire no document load, so Playwright never hears them from the guest.
+      onSameDocument: (_event, url, isMainFrame) => {
+        if (!isMainFrame || url.length === 0 || url === "about:blank") return;
+        tab.relay?.sameDocumentNavigated(url);
+      },
     };
     tabs.set(id, tab);
     debuggee.debugger.on("message", tab.onMessage);
     debuggee.webContents.on("did-navigate", tab.onNewDocument);
+    debuggee.webContents.on("did-navigate-in-page", tab.onSameDocument);
     emit({ type: "attached", ...key });
     const shown = shownTabs.get(id);
     if (shown !== undefined) emit({ type: "shown", ...key, shown });

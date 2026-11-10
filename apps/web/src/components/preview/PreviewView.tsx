@@ -40,6 +40,7 @@ import { ensureLocalApi } from "~/localApi";
 import { getClientSettings, updateClientSettings } from "~/hooks/useSettings";
 import { locatePreviewSession } from "~/browser/browserScope";
 import {
+  previewAddressUrl,
   rememberPreviewUrl,
   updatePreviewServerSnapshot,
   useActivePreviewSessions,
@@ -232,7 +233,10 @@ export function PreviewView({
   const desktopOverlay = tabId ? (sessionPreview.desktopByTabId[tabId] ?? null) : null;
   const layoutZoomFactor = useBrowserLayoutZoomFactor(desktopOverlay?.zoomFactor ?? 1);
   const navStatus = snapshot?.navStatus ?? { _tag: "Idle" as const };
-  const url = navStatus._tag === "Idle" ? "" : navStatus.url;
+  const url = previewAddressUrl(
+    navStatus._tag === "Idle" ? "" : navStatus.url,
+    desktopOverlay?.url,
+  );
   const loading = desktopOverlay?.loading ?? navStatus._tag === "Loading";
   const canGoBack = desktopOverlay?.canGoBack ?? snapshot?.canGoBack ?? false;
   const canGoForward = desktopOverlay?.canGoForward ?? snapshot?.canGoForward ?? false;

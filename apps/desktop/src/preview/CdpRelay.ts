@@ -21,6 +21,8 @@ export interface CdpRelayTarget {
 export interface CdpRelayConnection {
   readonly receive: (raw: string) => void;
   readonly event: (method: string, params: unknown, sessionId: string | undefined) => void;
+  /** Playwright misses SPA routes unless the page session sees this CDP event. */
+  readonly sameDocumentNavigated: (url: string) => void;
 }
 
 interface CdpCommand {
@@ -63,6 +65,19 @@ const BROWSER_CONTEXT_ID = "t3-preview";
 const ANNOUNCE = Symbol("announce");
 const PAGE_SESSION_ID = "t3-preview-page";
 
+const mainFrameIdFromTree = (result: unknown): string | null => {
+  if (typeof result !== "object" || result === null) return null;
+  const frame = (result as { frameTree?: { frame?: { id?: unknown } } }).frameTree?.frame;
+  return typeof frame?.id === "string" && frame.id.length > 0 ? frame.id : null;
+};
+
+const mainFrameIdFromNavigation = (params: unknown): string | null => {
+  if (typeof params !== "object" || params === null) return null;
+  const frame = (params as { frame?: { id?: unknown; parentId?: unknown } }).frame;
+  if (!frame || frame.parentId !== undefined) return null;
+  return typeof frame.id === "string" && frame.id.length > 0 ? frame.id : null;
+};
+
 const ACKNOWLEDGED = new Set([
   "Target.setDiscoverTargets",
   "Browser.grantPermissions",
@@ -99,6 +114,7 @@ export function createCdpRelayConnection(
   };
   let attached = false;
   let downloadEventsEnabled = false;
+  let mainFrameId: string | null = null;
   /** Relay-created page sessions share one real debugger; child frame sessions retain their own ids. */
   const sessions = new Map<string, "browser" | "page">([[PAGE_SESSION_ID, "page"]]);
   let sessionSequence = 0;
@@ -198,7 +214,34 @@ export function createCdpRelayConnection(
     }
     // Playwright asks for this on every page; the host emulates focus only while it is in use.
     if (command.method === "Emulation.setFocusEmulationEnabled") return Promise.resolve({});
-    return target.send(command.method, command.params ?? {}, child, owner);
+    const sent = target.send(command.method, command.params ?? {}, child, owner);
+    // A child session's tree root is that frame, not the page the address bar shows.
+    if (command.method !== "Page.getFrameTree" || child !== undefined) return sent;
+    return sent.then((result) => {
+      const id = mainFrameIdFromTree(result);
+      if (id) mainFrameId = id;
+      return result;
+    });
+  };
+
+  const publish = (method: string, params: unknown, sessionId: string | undefined) => {
+    if (!attached) return;
+    if (method === "Page.frameNavigated") {
+      const id = mainFrameIdFromNavigation(params);
+      if (id) mainFrameId = id;
+    }
+    if (method.startsWith("Page.download")) method = method.replace("Page.", "Browser.");
+    // Download events are the browser's; Playwright listens on its root session.
+    if (method.startsWith("Browser.download")) {
+      if (downloadEventsEnabled) send({ method, params });
+      return;
+    }
+    // Electron reports the page's own events with an empty session id.
+    if (sessionId) {
+      send({ method, params, sessionId });
+      return;
+    }
+    for (const [id, kind] of sessions) if (kind === "page") send({ method, params, sessionId: id });
   };
 
   return {
@@ -237,21 +280,10 @@ export function createCdpRelayConnection(
           }),
       );
     },
-    event: (method, params, sessionId) => {
-      if (!attached) return;
-      if (method.startsWith("Page.download")) method = method.replace("Page.", "Browser.");
-      // Download events are the browser's; Playwright listens on its root session.
-      if (method.startsWith("Browser.download")) {
-        if (downloadEventsEnabled) send({ method, params });
-        return;
-      }
-      // Electron reports the page's own events with an empty session id.
-      if (sessionId) {
-        send({ method, params, sessionId });
-        return;
-      }
-      for (const [id, kind] of sessions)
-        if (kind === "page") send({ method, params, sessionId: id });
+    event: publish,
+    sameDocumentNavigated: (url) => {
+      if (mainFrameId === null || url.length === 0) return;
+      publish("Page.navigatedWithinDocument", { frameId: mainFrameId, url }, undefined);
     },
   };
 }

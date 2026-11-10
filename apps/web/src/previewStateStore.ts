@@ -18,6 +18,8 @@ export interface DesktopPreviewOverlay {
   canGoBack: boolean;
   canGoForward: boolean;
   loading: boolean;
+  /** Present once the hosted webview has a document URL, including SPA routes. */
+  url?: string;
   zoomFactor: number;
   pictureInPicture: boolean;
   colorScheme: DesktopPreviewColorScheme;
@@ -370,6 +372,14 @@ export function reconcilePreviewServerSessions(
   });
 }
 
+/** The hosted webview follows in-page routes the session snapshot can miss. */
+export function previewAddressUrl(
+  snapshotUrl: string,
+  overlayUrl: string | null | undefined,
+): string {
+  return overlayUrl && overlayUrl.length > 0 ? overlayUrl : snapshotUrl;
+}
+
 function haveSameValues<T>(left: Record<string, T>, right: Record<string, T>): boolean {
   const keys = Object.keys(left);
   return keys.length === Object.keys(right).length && keys.every((key) => left[key] === right[key]);
@@ -387,6 +397,7 @@ function isPreviewStateEqual(
       previous.canGoBack === next.canGoBack &&
       previous.canGoForward === next.canGoForward &&
       previous.loading === next.loading &&
+      previous.url === next.url &&
       previous.zoomFactor === next.zoomFactor &&
       previous.pictureInPicture === next.pictureInPicture &&
       previous.colorScheme === next.colorScheme &&

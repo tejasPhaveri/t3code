@@ -1,0 +1,10 @@
+---
+description: When the user says build, package the working tree as it is
+alwaysApply: true
+---
+
+# Fork builds
+
+When the user says build, package the working tree exactly as it is. Do not park, stash, omit, revert, or leave out uncommitted work. Devin usage limits and every other change in the tree are authorized unless the user names a specific exclusion.
+
+Do not install the built app unless the user asks.

@@ -58,6 +58,12 @@ const makeDebuggee = (
           resolve({ targetInfo: { targetId: "GUEST" } });
           return;
         }
+        if (method === "Page.getFrameTree") {
+          resolve({
+            frameTree: { frame: { id: "MAIN", url: "https://qa.example/app/incidents" } },
+          });
+          return;
+        }
         if (method === "Emulation.setFocusEmulationEnabled") {
           focusEmulation.push(params?.enabled === true);
           if (options.deferFocus) focusChanges.push(() => resolve({}));
@@ -1012,6 +1018,52 @@ describe("DesktopBrowserHost", () => {
       );
       expect(host.humanStartedDownload(debuggee.tab.webContents)).toBe(false);
     }),
+  );
+
+  it.effect("tells Playwright when the page changes URL without loading a new document", () =>
+    Effect.gen(function* () {
+      const host = yield* DesktopBrowserHost.make;
+      const debuggee = makeDebuggee();
+      const events = yield* Queue.unbounded<DesktopBrowserEvent>();
+      yield* host.events.pipe(
+        Stream.runForEach((line) =>
+          Queue.offer(events, decodeEvent(new TextDecoder().decode(line))),
+        ),
+        Effect.forkScoped,
+      );
+      host.attach(key, debuggee.tab);
+      expect(yield* Queue.take(events)).toEqual({ type: "attached", ...key });
+      yield* host.handleCommandLine(
+        encodeJson({
+          type: "cdp",
+          ...key,
+          message: encodeJson({ id: 1, method: "Target.setAutoAttach" }),
+        }),
+      );
+      yield* Queue.takeN(events, 2);
+      yield* host.handleCommandLine(
+        encodeJson({
+          type: "cdp",
+          ...key,
+          message: encodeJson({
+            id: 2,
+            method: "Page.getFrameTree",
+            sessionId: "t3-preview-page",
+          }),
+        }),
+      );
+      expect(yield* Queue.take(events)).toMatchObject({ type: "cdp", ...key });
+      const webContents = debuggee.tab.webContents as unknown as NodeEvents.EventEmitter;
+      webContents.emit("did-navigate-in-page", {}, "https://qa.example/app/officers/1", false);
+      webContents.emit("did-navigate-in-page", {}, "https://qa.example/app/officers/1", true);
+      const next = yield* Queue.take(events);
+      expect(next).toMatchObject({ type: "cdp", ...key });
+      expect(JSON.parse((next as { message: string }).message)).toEqual({
+        method: "Page.navigatedWithinDocument",
+        params: { frameId: "MAIN", url: "https://qa.example/app/officers/1" },
+        sessionId: "t3-preview-page",
+      });
+    }).pipe(Effect.scoped),
   );
 
   it.effect("detaches only the tab whose CDP event is too large to relay", () =>

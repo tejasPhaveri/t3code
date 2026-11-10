@@ -1164,8 +1164,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     }
   });
 
-  const computeNavStatus = (wc: Electron.WebContents): PreviewNavStatus => {
-    const url = wc.getURL();
+  const computeNavStatus = (wc: Electron.WebContents, committedUrl?: string): PreviewNavStatus => {
+    // getURL() can still be the previous document while did-navigate-in-page already has the route.
+    const url = committedUrl && committedUrl.length > 0 ? committedUrl : wc.getURL();
     const title = wc.getTitle();
     if (url === "" || url === "about:blank") return { kind: "Idle" };
     // isLoading() includes late iframes whose completion may never clear the tab's loading bar.
@@ -1196,9 +1197,10 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const syncState = Effect.fn("PreviewManager.syncWebContentsState")(function* (
       preserveLoadFailure: boolean,
       confirmedNavigation = false,
+      committedUrl?: string,
     ) {
       if (wc.isDestroyed()) return;
-      const computedNavStatus = computeNavStatus(wc);
+      const computedNavStatus = computeNavStatus(wc, committedUrl);
       const canGoBack = wc.navigationHistory.canGoBack();
       const canGoForward = wc.navigationHistory.canGoForward();
       const updatedAt = yield* currentIso;
@@ -1238,8 +1240,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       if (Option.isSome(next)) yield* emitIfCurrent(tabId, next.value);
     });
     const sync = () => runFork(syncState(true));
-    const syncNavigation = () => runFork(syncState(false, true));
-    const syncInPageNavigation = () => runFork(syncState(false));
+    const syncNavigation = (_event: Electron.Event, url: string) =>
+      runFork(syncState(false, true, url));
+    const syncInPageNavigation = (_event: Electron.Event, url: string, isMainFrame: boolean) => {
+      if (!isMainFrame) return;
+      runFork(syncState(false, false, url));
+    };
     const restoreRecordingCursor = () =>
       runFork(
         Effect.gen(function* () {

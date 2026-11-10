@@ -1020,6 +1020,41 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("keeps the address on an in-page route when getURL is still the document", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents({ url: "https://qa.example/app/incidents" });
+        fromId.mockReturnValue(preview.webContents);
+        const states: PreviewManager.PreviewTabState[] = [];
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          Effect.sync(() => {
+            states.push(state);
+          }),
+        );
+        yield* manager.createTab("tab_in_page");
+        yield* manager.registerWebview("tab_in_page", 42);
+        preview.listeners.get("did-navigate-in-page")?.(
+          {} as never,
+          "https://qa.example/app/officers/1" as never,
+          false as never,
+        );
+        preview.listeners.get("did-navigate-in-page")?.(
+          {} as never,
+          "https://qa.example/app/officers/1" as never,
+          true as never,
+        );
+        yield* Effect.yieldNow;
+
+        expect(preview.webContents.getURL()).toBe("https://qa.example/app/incidents");
+        expect(states.at(-1)?.navStatus).toEqual({
+          kind: "Success",
+          url: "https://qa.example/app/officers/1",
+          title: "Preview",
+        });
+      }),
+    ),
+  );
+
   effectIt.effect("ignores an old capture that completes after webview replacement", () =>
     withManager((manager) =>
       Effect.gen(function* () {

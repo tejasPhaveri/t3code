@@ -49,6 +49,12 @@ describe("projectDesktopState", () => {
       ).favicon,
     ).toBeNull();
     expect(projectDesktopState(state({ kind: "Idle" })).favicon).toBeNull();
+    expect(
+      projectDesktopState(
+        state({ kind: "Success", url: "https://qa.example/app/officers/1", title: "" }),
+      ).url,
+    ).toBe("https://qa.example/app/officers/1");
+    expect(projectDesktopState(state({ kind: "Idle" })).url).toBeUndefined();
   });
 });
 
