@@ -18,6 +18,7 @@ import * as NodeCrypto from "node:crypto";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
+import * as Clock from "effect/Clock";
 import * as Base64 from "effect/encoding/Base64";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -61,6 +62,9 @@ const RuntimeConnectionCatalogDocumentJson = Schema.fromJsonString(
 const encodeRuntimeConnectionCatalogDocumentJson = Schema.encodeEffect(
   RuntimeConnectionCatalogDocumentJson,
 );
+const decodeRuntimeConnectionCatalogDocumentJson = Schema.decodeEffect(
+  RuntimeConnectionCatalogDocumentJson,
+);
 
 const DesktopConnectionCatalogStoreWriteOperation = Schema.Literals([
   "create-temporary-file-name",
@@ -68,6 +72,7 @@ const DesktopConnectionCatalogStoreWriteOperation = Schema.Literals([
   "create-directory",
   "write-temporary-file",
   "replace-catalog-file",
+  "keep-unreadable-catalog",
 ]);
 
 const DesktopConnectionCatalogStoreMigrationOperation = Schema.Literals([
@@ -494,6 +499,46 @@ export const make = Effect.gen(function* () {
     return key;
   });
 
+  const decryptDocument = (document: EncryptedConnectionCatalogDocument) =>
+    document.version === 2
+      ? decryptStableCatalog(document.encryptedCatalog)
+      : decryptSafeStorageCatalog(document.encryptedCatalog);
+
+  // A catalog this build cannot decrypt or decode may still hold another build's saved
+  // environments and credentials, so a save copies it aside instead of destroying it.
+  const keepUnreadableCatalog = Effect.gen(function* () {
+    const readable = yield* readDocument(fileSystem, catalogPath).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.succeed(true),
+          onSome: (document) =>
+            decryptDocument(document).pipe(
+              Effect.flatMap(decodeRuntimeConnectionCatalogDocumentJson),
+              Effect.as(true),
+            ),
+        }),
+      ),
+      Effect.orElseSucceed(() => false),
+    );
+    if (readable) {
+      return;
+    }
+    const keptPath = `${catalogPath}.unreadable-${yield* Clock.currentTimeMillis}`;
+    yield* fileSystem.copyFile(catalogPath, keptPath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new DesktopConnectionCatalogStoreWriteError({
+            operation: "keep-unreadable-catalog",
+            path: keptPath,
+            cause,
+          }),
+      ),
+    );
+    yield* Effect.logWarning("Kept an unreadable connection catalog before replacing it.", {
+      keptPath,
+    });
+  });
+
   const writeCatalog = Effect.fn("desktop.connectionCatalogStore.writeCatalog")(function* (
     catalog: string,
   ) {
@@ -617,6 +662,7 @@ export const make = Effect.gen(function* () {
       if (!stableConnectionCatalog && !(yield* encryptionAvailable)) {
         return false;
       }
+      yield* keepUnreadableCatalog;
       yield* writeCatalog(catalog);
       return true;
     }),

@@ -1,7 +1,6 @@
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 
 import { useBrowserShelfStore } from "./browser/browserShelfStore";
-import { useBrowserHistoryStore } from "./browserHistoryStore";
 import { useClosedViewStore } from "./closedViewStore";
 import { useSourceControlLayoutStore } from "./components/gitGraph/sourceControlLayoutStore";
 import { useComposerDraftStore } from "./composerDraftStore";
@@ -23,7 +22,6 @@ const PANEL_STORES = [
   useDiffPanelStore,
   useClosedViewStore,
   useBrowserShelfStore,
-  useBrowserHistoryStore,
 ];
 
 /**

@@ -1,6 +1,7 @@
 import type {
   BrowserPersistence,
   EnvironmentId,
+  PreviewAppearancePreference,
   PreviewOpenInput,
   PreviewRuntime,
   PreviewSessionSnapshot,
@@ -30,6 +31,7 @@ interface OpenPreviewSessionInput<E> {
   projectId?: string;
   isolated?: boolean;
   persistence?: BrowserPersistence;
+  colorScheme?: PreviewAppearancePreference;
   runtime?: PreviewRuntime;
   title?: string;
   lazy?: boolean;
@@ -63,7 +65,13 @@ export async function openPreviewSession<E>(
         ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
         ...(input.isolated ? { isolated: true } : {}),
       }),
-      ...(runtime === undefined || runtime === "desktop" ? {} : { runtime }),
+      ...(runtime === undefined || runtime === "desktop"
+        ? {}
+        : {
+            runtime,
+            zoomFactor: input.zoomFactor ?? defaults.zoomFactor,
+            colorScheme: input.colorScheme ?? defaults.appearance,
+          }),
     },
   });
   if (result._tag === "Failure") {

@@ -199,6 +199,7 @@ export const PreviewOpenInput = Schema.Struct({
   title: Schema.optional(Title),
   lazy: Schema.optional(Schema.Boolean),
   runtime: Schema.optional(PreviewRuntime),
+  colorScheme: Schema.optional(PreviewAppearancePreference),
   reveal: Schema.optional(Schema.Boolean),
   /** A zoom of the tab's own, as a reopened tab had before the restart. */
   zoomFactor: Schema.optional(PreviewZoomFactor),
