@@ -1,5 +1,7 @@
 # Product analytics
 
+This fork replaces `AnalyticsService` with a no-op and drops the identity readers in `apps/server/src/telemetry/Identify.ts`; relay tracing is off in web and mobile. The rest describes upstream. When merging upstream, keep those files at the fork's version.
+
 The server owns analytics delivery, opt-out, and identity for every connected client. Clients never
 load the PostHog browser SDK, PostHog person profiles stay disabled, and visiting hosted web without
 an authenticated connection does not count as product use.

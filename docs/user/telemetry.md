@@ -1,17 +1,15 @@
 # Product usage data
 
-The T3 Code server sends product usage events to T3 Code's own endpoint at `ingest.t3.codes`,
-associated with a hashed account or installation identifier. To count how many installations one person
-uses, the server also sends hashed account identifiers: your T3 Connect account, your OpenAI and
-Claude accounts when you are signed in, and a random identifier for each device that connects. The endpoint keeps a copy of each
-event and forwards events to PostHog. Events include the provider, model, reasoning effort,
-permission mode, turn and request results, duration, release channel, and token counts when
-available. Child-agent token counts are reported separately from the main agent's. Events include
-the model ID the provider used, including custom models and models served by a custom endpoint.
+This fork sends no product usage data. The server records no analytics events and sends nothing to
+`ingest.t3.codes` or PostHog. It does not read `~/.codex/auth.json` or `~/.claude.json` for
+identity, does not write an anonymous install id, and sends no hashed account or device ids. Web and
+mobile clients export no relay traces, and site icons load from the site itself rather than
+Google's favicon service. There is nothing to opt out of, so `T3CODE_TELEMETRY_ENABLED` has no
+effect.
 
-Product events do not include prompts, responses, file contents, authentication tokens, conversation IDs,
-raw provider events, or child-agent output. The one exception is [agent feedback](#agent-feedback),
-which is off unless you turn it on.
+Two outbound requests remain because features need them, and neither carries account data:
+usage cost estimates download LiteLLM's public price table from GitHub once a day, and T3 Connect,
+if you sign in to it, goes through T3's relay. The rest of this page describes upstream T3 Code.
 
 ## Agent feedback
 

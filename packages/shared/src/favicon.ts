@@ -71,14 +71,15 @@ export function toolActivityFaviconUrl(
   );
 }
 
-export function faviconUrlForOrigin(rawUrl: string | null | undefined, size = 32): string | null {
+export function faviconUrlForOrigin(rawUrl: string | null | undefined, _size = 32): string | null {
   if (!rawUrl) return null;
   try {
     const url = new URL(rawUrl);
     if (!url.hostname) return null;
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     if (!isPublicFaviconHost(url.hostname)) return null;
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(url.hostname)}&sz=${size}`;
+    // The site's own icon, not a third-party favicon proxy that would see every host.
+    return new URL("/favicon.ico", url.origin).href;
   } catch {
     return null;
   }
