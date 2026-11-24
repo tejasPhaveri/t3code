@@ -54,6 +54,11 @@ jobs:
           --build-version "${{ steps.version.outputs.value }}"
           --output-dir release-win
 
+      - name: List the packaged payload
+        if: failure()
+        shell: bash
+        run: find release-win -path '*unpacked*' -type f | sed 's|^release-win/||' | sort
+
       - name: Attach to release
         shell: bash
         env:
