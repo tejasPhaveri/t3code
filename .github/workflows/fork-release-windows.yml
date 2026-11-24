@@ -52,12 +52,12 @@ jobs:
           vp exec node scripts/build-desktop-artifact.ts
           --platform win --target nsis --arch x64
           --build-version "${{ steps.version.outputs.value }}"
-          --output-dir release-win
+          --output-dir release-win --keep-stage
 
       - name: List the packaged payload
         if: failure()
         shell: bash
-        run: find release-win -path '*unpacked*' -type f | sed 's|^release-win/||' | sort
+        run: find "$RUNNER_TEMP" "$(cygpath -u "$TEMP")" -path '*win-unpacked*' -type f 2>/dev/null | sed 's|^.*win-unpacked/||' | sort
 
       - name: Attach to release
         shell: bash
