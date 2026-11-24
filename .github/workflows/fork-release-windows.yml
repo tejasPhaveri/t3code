@@ -57,7 +57,7 @@ jobs:
       - name: List the packaged payload
         if: failure()
         shell: bash
-        run: find "$RUNNER_TEMP" "$(cygpath -u "$TEMP")" -path '*win-unpacked*' -type f 2>/dev/null | sed 's|^.*win-unpacked/||' | sort
+        run: find "$(cygpath -u "$TEMP")" -path '*win-unpacked*' -type f 2>/dev/null | sed 's|^.*win-unpacked/||' | sort
 
       - name: Attach to release
         shell: bash

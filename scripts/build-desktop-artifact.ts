@@ -1064,7 +1064,9 @@ export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type)
   ];
 }
 
-export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 80;
+// This fork builds Windows natively, which adds the server compile cache (one file per module)
+// and the Cursor SDK binaries that upstream's Linux-hosted Windows builds leave out.
+export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 128;
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
 export const WINDOWS_SERVER_EXTRA_RESOURCES = [
   {
