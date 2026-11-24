@@ -1,0 +1,56 @@
+# Builds this fork's Windows installer and attaches it to a fork release. The Mac build is made
+# locally (docs/operations/fork-mac-app.md); publishing that release starts this workflow.
+name: Fork release (Windows)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach to, for example fork-v0.1.1-20261124.1
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    if: github.repository == 'tejasPhaveri/t3code' && startsWith(github.event.release.tag_name || inputs.tag, 'fork-v')
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-ci-deps
+
+      - name: Add the Rust target
+        shell: bash
+        run: rustup target add x86_64-pc-windows-msvc
+
+      # fork-v0.1.1-20261124.1 -> 0.1.1-preview.20261124.1, the version scheme of the Mac build.
+      - name: Resolve build version
+        id: version
+        shell: bash
+        run: |
+          rest="${TAG#fork-v}"
+          echo "value=${rest%-*}-preview.${rest##*-}" >> "$GITHUB_OUTPUT"
+
+      - name: Build installer
+        shell: bash
+        run: >
+          vp exec node scripts/build-desktop-artifact.ts
+          --platform win --target nsis --arch x64
+          --build-version "${{ steps.version.outputs.value }}"
+          --output-dir release-win
+
+      - name: Attach to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" release-win/*.exe --clobber --repo "$GITHUB_REPOSITORY"

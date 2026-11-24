@@ -33,6 +33,14 @@ gh release create fork-v0.1.1-YYYYMMDD.N --repo tejasPhaveri/t3code --verify-tag
 
 `T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR` reuses `native/resource-monitor/target/aarch64-apple-darwin/release/t3-resource-monitor`, which was copied from the Nightly bundle because Rust is not installed.
 
+## Windows
+
+Publishing a `fork-v*` release runs `.github/workflows/fork-release-windows.yml`, which builds an unsigned x64 NSIS installer on GitHub Actions and attaches it to the release. To rebuild one for an existing tag, run that workflow by hand with the tag.
+
+Packaged builds set the same isolation defaults themselves in `apps/desktop/src/boot.ts` (`%USERPROFILE%\.t3-fork`, `%APPDATA%\t3code-fork`, no auto-update), since Windows has no `LSEnvironment`. The installer keeps upstream's app id, so on a PC that already has upstream T3 Code (Beta) installed it replaces that install. Its data stays separate.
+
+To install: download `T3-Code-*-x64.exe` from the release and run it. SmartScreen warns about an unknown publisher because the build is unsigned; choose **More info**, then **Run anyway**. Rerunning a newer installer is the update.
+
 ## Installing on another Mac
 
 Builds are published as GitHub releases on `tejasPhaveri/t3code` (Apple Silicon only). The zip is ad-hoc signed, so the install script, not a double-click on the dmg, is the supported path: it clears quarantine and re-signs. It refuses to replace an `/Applications/T3 Code.app` that is not the fork.
